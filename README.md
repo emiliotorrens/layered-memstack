@@ -76,6 +76,8 @@ node scripts/memory-dedup.js --fix
 | Schedule | What |
 |---|---|
 | Daily 3:00 AM | Auto-summary → daily note + MEMORY.md update (with dedup) + entities.md update |
+| Daily 4:00 AM | Dedup check → runs --check and --fix post-summary |
+| Daily 11:00 PM | MCP audit → reviews external writes via MCP for suspicious content |
 | Weekly Sun 22:00 | Audit → clean expired TTLs, archive >14d notes, verify INDEX.md |
 | Heartbeat (4h) | Checkpoint if context usage >50% |
 
