@@ -98,9 +98,19 @@ skills: {
 The skill will:
 1. Create the directory structure if it doesn't exist
 2. Install `scripts/memory-dedup.js`
-3. Set up the cron jobs
+3. Set up the cron jobs automatically via `scripts/setup-crons.sh`
 4. Configure `memorySearch.extraPaths` to index all layers
 5. Generate a starter `MEMORY.md` and `reference/entities.md`
+
+### Set Up Crons
+
+```bash
+# Automatic — creates all 3 crons
+bash scripts/setup-crons.sh --tz Europe/Madrid --channel telegram --to "YOUR_CHAT_ID"
+
+# Dry run first to see what will be created
+bash scripts/setup-crons.sh --dry-run
+```
 
 ## Configuration
 

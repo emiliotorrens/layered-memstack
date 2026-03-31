@@ -66,7 +66,20 @@ Add to `openclaw.json` under `agents.defaults.memorySearch`:
 
 ### 5. Set up crons
 
-Create three crons (see Cron Setup below).
+Run the setup script to create all 3 crons automatically:
+
+```bash
+bash scripts/setup-crons.sh --tz Europe/Madrid --channel telegram --to "CHAT_ID"
+```
+
+Options:
+- `--tz IANA` — timezone (default: Europe/Madrid)
+- `--channel telegram|whatsapp|discord` — delivery channel for summaries
+- `--to CHAT_ID` — delivery target (Telegram chat ID, phone number, etc.)
+- `--model alias` — model override (default: uses your configured default)
+- `--dry-run` — show what would be created without creating
+
+Or create them manually (see Cron Setup below).
 
 ## Layer Rules
 
