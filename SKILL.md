@@ -182,7 +182,10 @@ Prompt should instruct the agent to:
 4. Verify INDEX.md is up to date
 5. Report summary of changes
 
-### Cron 3: MCP Memory Audit (daily 11:00 PM)
+### Cron 3: MCP Memory Audit (daily 11:00 PM) — optional
+
+Only needed if using [mem-persistence](https://github.com/emiliotorrens/mem-persistence) MCP server.
+Enable with `--mcp-audit` flag in setup-crons.sh.
 
 ```
 Schedule: 0 23 * * * (user timezone)

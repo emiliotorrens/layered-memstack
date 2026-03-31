@@ -14,7 +14,7 @@ TZ="${TZ:-Europe/Madrid}"
 CHANNEL=""
 TO=""
 MODEL="default"
-DRY_RUN=false
+MCP_AUDIT=false
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -24,8 +24,9 @@ while [[ $# -gt 0 ]]; do
     --to) TO="$2"; shift 2 ;;
     --model) MODEL="$2"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
+    --mcp-audit) MCP_AUDIT=true; shift ;;
     -h|--help)
-      echo "Usage: bash setup-crons.sh [--tz IANA] [--channel telegram] [--to CHAT_ID] [--model alias] [--dry-run]"
+      echo "Usage: bash setup-crons.sh [--tz IANA] [--channel telegram] [--to CHAT_ID] [--model alias] [--dry-run] [--mcp-audit]"
       exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
@@ -124,9 +125,12 @@ AUDIT_MSG='You are the MCP memory security auditor. Do the following:
    If SUSPICIOUS or DANGEROUS: alert user directly with full details of each flagged operation.'
 
 echo "🔒 Cron 3/4: MCP Memory Audit (daily 11:00 PM)"
-if [[ "$DRY_RUN" == "true" ]]; then
-  echo "   [dry-run] Would create: --cron '0 23 * * *' --tz $TZ --name 'memstack: mcp-audit'"
+if [[ "$MCP_AUDIT" != "true" ]]; then
+  echo "   [skipped] Pass --mcp-audit to enable (only needed if using mem-persistence MCP server)"
 else
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "   [dry-run] Would create: --cron '0 23 * * *' --tz $TZ --name 'memstack: mcp-audit'"
+  else
   openclaw cron add \
     --name "memstack: mcp-audit" \
     --cron "0 23 * * *" \
@@ -137,6 +141,7 @@ else
     $MODEL_ARGS \
     --no-deliver \
     --json 2>&1 | tail -1
+  fi
 fi
 echo ""
 
