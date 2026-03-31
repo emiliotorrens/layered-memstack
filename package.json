@@ -1,0 +1,21 @@
+{
+  "name": "layered-memstack",
+  "version": "0.0.1",
+  "description": "OpenClaw skill — 3-layer persistent memory system with automated maintenance",
+  "keywords": [
+    "openclaw",
+    "skill",
+    "memory",
+    "agents",
+    "markdown",
+    "knowledge-graph",
+    "deduplication"
+  ],
+  "author": "Emilio Torrens <emilio@torrens.dev>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/emiliotorrens/layered-memstack.git"
+  },
+  "homepage": "https://github.com/emiliotorrens/layered-memstack"
+}
