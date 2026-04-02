@@ -56,6 +56,44 @@ Topic files (`memory/viajes.md`, `memory/salud.md`) hold mid-level context organ
 ### L3 — Deep References
 Detailed docs (`reference/china_2026.md`, `reference/integraciones.md`) only loaded when search finds them relevant. Knowledge graph (`reference/entities.md`) provides relationship lookups.
 
+### Knowledge Graph (entities.md)
+
+The knowledge graph is a lightweight, markdown-based entity index in `reference/entities.md`. It maps **people, places, companies, projects, trips, and devices** — and their relationships — so the agent can resolve references quickly without searching through every file.
+
+**Why it matters:** When the agent sees "ask Maria about the API", it can look up who Maria is, what company she works for, and which project the API belongs to — all from one file, without loading dozens of daily notes.
+
+**Format:** Organized by sections (`## Personas`, `## Empresas`, `## Viajes`, etc.), each entry is a compact line with key attributes and cross-references:
+
+```markdown
+## Personas
+- **Maria López** | Backend lead @ Acme Corp | Slack: @maria | relevant: api-migration project
+- **Carlos Ruiz** | Freelance designer | contact: carlos@email.com | relevant: website-redesign
+
+## Empresas
+- **Acme Corp** | SaaS platform, B2B | HQ: Madrid | contacts: Maria López (tech), Juan Pérez (sales)
+
+## Proyectos
+- **api-migration** | Acme Corp REST→GraphQL migration | status: active | lead: Maria López | repo: github.com/acme/api-v2
+- **website-redesign** | Landing page refresh | status: paused | lead: Carlos Ruiz
+
+## Viajes
+- **Tokyo Nov 2026** | 15-22 Nov | flights: IB6801/IB6802 | hotel: Park Hyatt | purpose: conference
+
+## Dispositivos
+- **home-server** | Raspberry Pi 4 | IP: 192.168.1.100 | services: Home Assistant, Tailscale
+```
+
+**How it's maintained:**
+- The **daily 3 AM auto-summary cron** extracts new entities from session transcripts and appends them
+- Entries can be **manually edited** — it's just a markdown file
+- The **weekly audit cron** cleans up orphaned or outdated entries
+- Cross-references (e.g. `relevant: api-migration`) let the agent jump between related entities
+
+**When it's used:**
+- Agent resolves ambiguous names ("which Carlos?")
+- Agent needs context about a project without loading the full reference doc
+- Agent connects dots across topics (person → company → project → trip)
+
 ### Deduplication
 Before writing to MEMORY.md, the system checks for similar existing content:
 
