@@ -9,7 +9,7 @@ An opinionated memory architecture for OpenClaw agents: curated core memory (L1)
 Install the skill and your OpenClaw agent gets:
 
 - **Layered memory structure** — L1 (MEMORY.md, always loaded), L2 (topic files + daily notes), L3 (deep references, loaded on demand)
-- **Auto-resumen diario** (3 AM) — reads session transcripts, generates a daily note, updates MEMORY.md and the knowledge graph
+- **Daily auto-summary** (3 AM) — reads session transcripts, generates a daily note, updates MEMORY.md and the knowledge graph
 - **Deduplication** — prevents writing the same fact twice using token similarity + entity overlap
 - **Knowledge graph** — `reference/entities.md` maps people, places, projects, and their relationships
 - **Weekly audit** — cleans expired TTL entries, archives old daily notes, verifies INDEX.md
