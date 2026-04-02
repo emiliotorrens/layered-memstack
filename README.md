@@ -83,16 +83,19 @@ node scripts/memory-dedup.js --fix
 
 ## Installation
 
-```bash
-openclaw skill install layered-memstack
-```
+> **Note:** layered-memstack is not yet published on ClawHub. Install manually from GitHub for now.
 
-Or add to `openclaw.json`:
+```bash
+# Clone into your OpenClaw skills directory
+git clone https://github.com/emiliotorrens/layered-memstack.git
+
+# Or reference it as a local skill in openclaw.json:
+```
 
 ```json5
 skills: {
-  install: {
-    packages: ["layered-memstack"]
+  local: {
+    paths: ["/path/to/layered-memstack"]
   }
 }
 ```
@@ -152,6 +155,16 @@ The skill respects your existing `memorySearch` config and extends it with:
 - **[OpenClaw community — layered memory post](https://www.reddit.com/r/openclaw/comments/1rnku5b/)** — the L1/L2/L3 architecture that inspired this system
 - **[Signet AI](https://github.com/Signet-AI/signetai)** — inspiration for the knowledge graph approach
 - **[OpenClaw](https://github.com/openclaw/openclaw)** — the agent framework this was built for
+
+## Roadmap
+
+- [x] 3-layer memory structure with automated crons
+- [x] Deduplication engine (`scripts/memory-dedup.js`)
+- [x] Knowledge graph (`reference/entities.md`)
+- [x] Weekly audit and TTL cleanup
+- [ ] Publish to ClawHub (`openclaw skill install layered-memstack`)
+- [ ] Interactive setup wizard (`layered-memstack init`)
+- [ ] Migration tool for existing OpenClaw memory setups
 
 ## License
 
