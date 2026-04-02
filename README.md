@@ -79,7 +79,7 @@ node scripts/memory-dedup.js --fix
 | Daily 4:00 AM | Dedup check → runs --check and --fix post-summary |
 | Daily 11:00 PM | **Optional** — MCP audit → reviews external writes via MCP for suspicious content |
 | Weekly Sun 22:00 | Audit → clean expired TTLs, archive >14d notes, verify INDEX.md |
-| Heartbeat (4h) | Checkpoint if context usage >50% |
+| Heartbeat (configurable, ≤4h recommended) | Checkpoint if context usage >50% |
 
 ## Installation
 
