@@ -17,7 +17,7 @@ description: >
 ## Architecture
 
 ```
-MEMORY.md              ← L1: always loaded, ~100 lines max
+MEMORY.md              ← L1: always loaded, ~50-60 lines max (breadcrumbs + pointers)
 memory/
 ├── {topic}.md         ← L2: topic breadcrumbs (viajes, salud, tecnico...)
 ├── YYYY-MM-DD.md      ← L2: daily notes (auto-generated at 3 AM)
@@ -85,12 +85,14 @@ Or create them manually (see Cron Setup below).
 
 | Layer | When to load | What goes here | Size target |
 |-------|-------------|----------------|-------------|
-| L1 | Every session start | Core facts, system config, active projects, pending items | ~100 lines |
+| L1 | Every session start | Breadcrumbs + pointers to L2/L3. Core facts, active project names, pending items. **No detail here.** | ~50-60 lines |
 | L2 | Today + yesterday auto-loaded; older via search | Topic summaries, daily notes with decisions/actions/facts | No limit |
 | L3 | Only via memory_search | Deep dives, travel details, health data, technical docs | No limit |
 
 ### L1 Writing Rules
 
+- MEMORY.md is **breadcrumbs + pointers only**. Detailed info goes in reference/ or memory/ files.
+- If something already has a pointer in L1, update the reference file — NOT MEMORY.md.
 - Before writing to MEMORY.md, always check for duplicates first:
   ```bash
   node scripts/memory-dedup.js --query "text to check"
@@ -164,9 +166,11 @@ Prompt should instruct the agent to:
 2. Extract decisions, actions, preferences, pending items, atomic facts
 3. Write `memory/YYYY-MM-DD.md` with structured sections
 4. Run `--query-batch` against MEMORY.md to filter duplicates
-5. Append genuinely new facts to MEMORY.md
-6. Run `--fix` on MEMORY.md
-7. Update `reference/entities.md` with new entities found
+5. Only add to MEMORY.md if genuinely new AND not a detail of something that already has a pointer
+6. If detail → update the referenced file instead
+7. Enforce ~50-60 line limit on MEMORY.md
+8. Run `--fix` on MEMORY.md
+9. Update `reference/entities.md` with new entities found
 
 ### Cron 2: Weekly audit (Sunday 22:00)
 
@@ -177,10 +181,11 @@ Session: isolated agentTurn
 
 Prompt should instruct the agent to:
 1. Clean expired TTL entries from MEMORY.md
-2. Move daily notes older than 14 days to `memory/archive/`
-3. Run `--fix` on MEMORY.md
-4. Verify INDEX.md is up to date
-5. Report summary of changes
+2. If MEMORY.md exceeds ~60 lines → aggressively prune (move detail to reference/)
+3. Move daily notes older than 14 days to `memory/archive/`
+4. Run `--fix` on MEMORY.md
+5. Verify INDEX.md is up to date
+6. Report summary of changes
 
 ### Cron 3: MCP Memory Audit (daily 11:00 PM) — optional
 
@@ -245,12 +250,11 @@ Add to workspace AGENTS.md:
 
 ```markdown
 ## Memory
-1. Read `MEMORY.md` at session start (L1)
+1. Read `MEMORY.md` at session start (L1 — breadcrumbs + pointers, ~50-60 lines)
 2. Read `memory/YYYY-MM-DD.md` for today + yesterday (L2)
 3. Use `memory_search` for anything beyond recent context
-4. Before writing to MEMORY.md: `node scripts/memory-dedup.js --query "text"`
-5. After writing: `node scripts/memory-dedup.js --fix`
-6. Write daily events to `memory/YYYY-MM-DD.md`
-7. Update MEMORY.md only for genuinely new long-term facts
-8. Items with TTL: `<!-- ttl:YYYY-MM-DD -->` — cleaned weekly
+4. MEMORY.md = pointers only. Detail goes in reference/ or memory/ files.
+5. Before writing to MEMORY.md: `node scripts/memory-dedup.js --query "text"`
+6. After writing: `node scripts/memory-dedup.js --fix`
+7. Items with TTL: `<!-- ttl:YYYY-MM-DD -->` — cleaned weekly
 ```

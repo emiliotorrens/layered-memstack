@@ -8,7 +8,7 @@ An opinionated memory architecture for OpenClaw agents: curated core memory (L1)
 
 Install the skill and your OpenClaw agent gets:
 
-- **Layered memory structure** — L1 (MEMORY.md, always loaded), L2 (topic files + daily notes), L3 (deep references, loaded on demand)
+- **Layered memory structure** — L1 (MEMORY.md, always loaded — breadcrumbs + pointers, ~50-60 lines), L2 (topic files + daily notes), L3 (deep references, loaded on demand)
 - **Daily auto-summary** (3 AM) — reads session transcripts, generates a daily note, updates MEMORY.md and the knowledge graph
 - **Deduplication** — prevents writing the same fact twice using token similarity + entity overlap
 - **Knowledge graph** — `reference/entities.md` maps people, places, projects, and their relationships
@@ -20,7 +20,7 @@ Install the skill and your OpenClaw agent gets:
 
 ```
 workspace/
-├── MEMORY.md              ← L1: core facts (~100 lines, always loaded)
+├── MEMORY.md              ← L1: breadcrumbs + pointers (~50-60 lines, always loaded)
 ├── INDEX.md               ← catalog of all files with tags
 ├── memory/
 │   ├── viajes.md          ← L2: topic breadcrumbs
@@ -38,7 +38,7 @@ workspace/
 ## How It Works
 
 ### L1 — Core Memory (MEMORY.md)
-Always loaded at session start. Contains essential facts: who the user is, system config, active projects, pending items. Each entry can have a TTL:
+Always loaded at session start. Contains **breadcrumbs and pointers** — not detailed information. Each section should point to the relevant L2/L3 file for details. The goal is to keep L1 under ~50-60 lines to minimize token cost per turn. Each entry can have a TTL:
 
 ```markdown
 - Cancel Fitbit Premium <!-- ttl:2026-05-01 -->
@@ -177,10 +177,10 @@ The skill respects your existing `memorySearch` config and extends it with:
 
 ```markdown
 ## Memory
-1. Read `MEMORY.md` at session start
+1. Read `MEMORY.md` at session start (breadcrumbs + pointers, ~50-60 lines)
 2. Read `memory/YYYY-MM-DD.md` for today + yesterday
 3. Use `memory_search` for anything beyond recent context
-4. Write significant events to daily notes
+4. MEMORY.md = pointers only. Detail goes in reference/ or memory/.
 5. Update MEMORY.md only for genuinely new long-term facts
 ```
 
