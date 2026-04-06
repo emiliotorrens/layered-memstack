@@ -38,7 +38,11 @@ workspace/
 ## How It Works
 
 ### L1 — Core Memory (MEMORY.md)
-Always loaded at session start. Contains **breadcrumbs and pointers** — not detailed information. Each section should point to the relevant L2/L3 file for details. The goal is to keep L1 under ~50-60 lines to minimize token cost per turn. Each entry can have a TTL:
+Always loaded at session start. Contains **breadcrumbs and pointers** — not detailed information. Each section should point to the relevant L2/L3 file for details.
+
+> **💡 Why ~50-60 lines?** MEMORY.md is injected as workspace context on every single turn. Keeping it compact directly reduces token cost per interaction. In practice, going from ~100 lines to ~50-60 lines saved ~56% of workspace injection tokens — that adds up fast across hundreds of daily turns.
+
+Each entry can have a TTL:
 
 ```markdown
 - Cancel Fitbit Premium <!-- ttl:2026-05-01 -->
@@ -183,6 +187,17 @@ The skill respects your existing `memorySearch` config and extends it with:
 4. MEMORY.md = pointers only. Detail goes in reference/ or memory/.
 5. Update MEMORY.md only for genuinely new long-term facts
 ```
+
+## Token Efficiency
+
+All workspace files (AGENTS.md, MEMORY.md, SOUL.md, etc.) are injected into every turn as context. This skill is designed with **token savings** as a core goal:
+
+- **L1 stays tiny** (~50-60 lines) — only breadcrumbs and pointers, never detail
+- **Detail lives in L2/L3** — loaded on demand via `memory_search`, not injected every turn
+- **Crons enforce limits** — the daily auto-summary and weekly audit both prevent MEMORY.md from growing back
+- **Real-world savings**: reducing L1 from ~100 to ~50-60 lines cut workspace injection by ~56% (from ~6K to ~2.7K tokens/turn)
+
+The key insight: information that's always loaded should be minimal. Everything else should be searchable but not pre-loaded.
 
 ## Related
 
