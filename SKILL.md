@@ -3,11 +3,13 @@ name: layered-memstack
 description: >
   3-layer persistent memory system for OpenClaw agents. Provides structured memory with
   L1 (core facts in MEMORY.md), L2 (topic files + daily notes), L3 (deep references +
-  knowledge graph). Includes automated crons for daily summaries, deduplication, TTL
-  cleanup, and knowledge graph maintenance. Use when: setting up agent memory from scratch,
-  organizing existing workspace notes into layers, automating memory maintenance, preventing
-  duplicate entries, managing a knowledge graph of entities, archiving old daily notes, or
-  configuring memorySearch for multi-layer retrieval with temporal decay and MMR.
+  knowledge graph). Includes automated maintenance via OpenClaw native Dreaming (nightly
+  consolidation, 2026.4.8+), weekly audit cron for TTL cleanup and archiving, deduplication
+  engine, and knowledge graph. Optionally extends with memory-wiki for structured claims,
+  contradiction detection, and staleness dashboards. Use when: setting up agent memory from
+  scratch, organizing existing workspace notes into layers, automating memory maintenance,
+  preventing duplicate entries, managing a knowledge graph of entities, archiving old daily
+  notes, or configuring memorySearch for multi-layer retrieval with temporal decay and MMR.
 ---
 
 # layered-memstack
@@ -64,9 +66,19 @@ Add to `openclaw.json` under `agents.defaults.memorySearch`:
 - **reference/entities.md** — see `references/entities-template.md`
 - **INDEX.md** — catalog of all files with tags and line counts
 
-### 5. Set up crons
+### 5. Enable Dreaming (OpenClaw 2026.4.8+)
 
-Run the setup script to create all 3 crons automatically:
+Dreaming replaces the manual 3 AM auto-summary cron. Enable it in OpenClaw config:
+
+```bash
+openclaw config patch '{"plugins":{"entries":{"memory-core":{"config":{"dreaming":{"enabled":true,"frequency":"0 3 * * *","timezone":"Europe/Madrid"}}}}}}'
+```
+
+Then restart the gateway. OpenClaw will automatically create and manage the nightly consolidation sweep.
+
+### 6. Set up remaining crons
+
+Run the setup script to create the weekly audit (and optional MCP audit) cron:
 
 ```bash
 bash scripts/setup-crons.sh --tz Europe/Madrid --channel telegram --to "CHAT_ID"
@@ -78,6 +90,7 @@ Options:
 - `--to CHAT_ID` — delivery target (Telegram chat ID, phone number, etc.)
 - `--model alias` — model override (default: uses your configured default)
 - `--dry-run` — show what would be created without creating
+- `--mcp-audit` — also create the nightly MCP memory security audit cron
 
 Or create them manually (see Cron Setup below).
 
@@ -153,26 +166,37 @@ Threshold 0.65 balances false positives vs missed duplicates.
 
 ## Cron Setup
 
-### Cron 1: Auto-summary (daily 3:00 AM)
+### Dreaming — nightly consolidation (replaces Cron 1)
 
+As of OpenClaw 2026.4.8, the daily 3 AM auto-summary is handled natively by **Dreaming** in `memory-core`. No manual cron needed.
+
+Dreaming runs a multi-phase sweep (light → REM → deep) that:
+- Consolidates session transcripts into structured memory
+- Extracts atomic facts and decisions
+- Updates MEMORY.md with genuinely new content (dedup built-in)
+- Updates the knowledge graph
+- Archives old daily notes
+
+Enable in config:
+```json
+{
+  "plugins": {
+    "entries": {
+      "memory-core": {
+        "config": {
+          "dreaming": {
+            "enabled": true,
+            "frequency": "0 3 * * *",
+            "timezone": "Europe/Madrid"
+          }
+        }
+      }
+    }
+  }
+}
 ```
-Schedule: 0 3 * * * (Europe/Madrid or user timezone)
-Model: claude-sonnet (or preferred model)
-Session: isolated agentTurn
-```
 
-Prompt should instruct the agent to:
-1. Read today's session transcripts
-2. Extract decisions, actions, preferences, pending items, atomic facts
-3. Write `memory/YYYY-MM-DD.md` with structured sections
-4. Run `--query-batch` against MEMORY.md to filter duplicates
-5. Only add to MEMORY.md if genuinely new AND not a detail of something that already has a pointer
-6. If detail → update the referenced file instead
-7. Enforce ~50-60 line limit on MEMORY.md
-8. Run `--fix` on MEMORY.md
-9. Update `reference/entities.md` with new entities found
-
-### Cron 2: Weekly audit (Sunday 22:00)
+### Cron 1: Weekly audit (Sunday 22:00)
 
 ```
 Schedule: 0 22 * * 0 (user timezone)
@@ -208,7 +232,7 @@ Prompt should instruct the agent to:
 
 This protects against external agents (Claude Desktop, Cursor, etc.) writing unexpected content to your memory files via MCP.
 
-### Cron 4: Heartbeat checkpoint
+### Heartbeat checkpoint
 
 Configure in HEARTBEAT.md (not a separate cron). Check context usage via `session_status`:
 - 50-79%: silent checkpoint to `memory/YYYY-MM-DD.md`
