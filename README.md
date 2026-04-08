@@ -123,6 +123,60 @@ node scripts/memory-dedup.js --fix
 | Weekly Sun 22:00 | Audit → clean expired TTLs, archive >14d notes, verify INDEX.md |
 | Heartbeat (configurable, ≤4h recommended) | Checkpoint if context usage >50% |
 
+---
+
+## Memory Wiki (OpenClaw 2026.4.8+)
+
+layered-memstack pairs naturally with the **memory-wiki** plugin bundled with OpenClaw. Once you have the 3-layer structure in place, memory-wiki can compile it into a navigable wiki with:
+
+- **Structured claims and evidence** — facts with confidence scores and source provenance
+- **Contradiction detection** — flags when two notes say different things about the same topic
+- **Staleness dashboards** — surfaces data that hasn't been updated in a while (useful for health metrics, travel plans, etc.)
+- **Wiki-native search** — `wiki_search`, `wiki_get`, `wiki_apply`, `wiki_lint`
+
+### Setup
+
+Install and configure memory-wiki in `unsafe-local` mode pointing at your workspace:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "memory-wiki": {
+        "enabled": true,
+        "config": {
+          "vaultMode": "unsafe-local",
+          "unsafeLocal": {
+            "allowPrivateMemoryCoreAccess": true,
+            "paths": [
+              "/path/to/workspace/MEMORY.md",
+              "/path/to/workspace/memory/",
+              "/path/to/workspace/reference/",
+              "/path/to/workspace/USER.md",
+              "/path/to/workspace/projects/"
+            ]
+          },
+          "search": {
+            "backend": "shared",
+            "corpus": "all"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Then compile:
+
+```bash
+openclaw wiki compile
+```
+
+The wiki reads your existing Markdown files directly — nothing to migrate, nothing to break.
+
+---
+
 ## Installation
 
 > **Note:** layered-memstack is not yet published on ClawHub. Install manually from GitHub for now.
@@ -130,14 +184,16 @@ node scripts/memory-dedup.js --fix
 ```bash
 # Clone into your OpenClaw skills directory
 git clone https://github.com/emiliotorrens/layered-memstack.git
-
-# Or reference it as a local skill in openclaw.json:
 ```
 
+Or reference it as a local skill in `openclaw.json`:
+
 ```json5
-skills: {
-  local: {
-    paths: ["/path/to/layered-memstack"]
+{
+  "skills": {
+    "local": {
+      "paths": ["/path/to/layered-memstack"]
+    }
   }
 }
 ```
@@ -158,6 +214,8 @@ bash scripts/setup-crons.sh --tz Europe/Madrid --channel telegram --to "YOUR_CHA
 # Dry run first to see what will be created
 bash scripts/setup-crons.sh --dry-run
 ```
+
+---
 
 ## Configuration
 
@@ -188,6 +246,8 @@ The skill respects your existing `memorySearch` config and extends it with:
 5. Update MEMORY.md only for genuinely new long-term facts
 ```
 
+---
+
 ## Token Efficiency
 
 All workspace files (AGENTS.md, MEMORY.md, SOUL.md, etc.) are injected into every turn as context. This skill is designed with **token savings** as a core goal:
@@ -199,9 +259,12 @@ All workspace files (AGENTS.md, MEMORY.md, SOUL.md, etc.) are injected into ever
 
 The key insight: information that's always loaded should be minimal. Everything else should be searchable but not pre-loaded.
 
+---
+
 ## Related
 
-- **[mem-persistence](https://github.com/emiliotorrens/mem-persistence)** — MCP server to share this memory system with Claude Code, Cursor, and other agents
+- **[mem-persistence](https://github.com/emiliotorrens/mem-persistence)** — MCP server to share this memory system with Claude Desktop, Claude Code, Cursor, and other agents
+- **[memory-wiki](https://github.com/openclaw/openclaw)** — bundled OpenClaw plugin that compiles this memory structure into a structured wiki with claims, contradictions, and dashboards
 
 ## Inspiration & Credits
 
@@ -215,6 +278,7 @@ The key insight: information that's always loaded should be minimal. Everything 
 - [x] Deduplication engine (`scripts/memory-dedup.js`)
 - [x] Knowledge graph (`reference/entities.md`)
 - [x] Weekly audit and TTL cleanup
+- [x] memory-wiki integration (unsafe-local mode, OpenClaw 2026.4.8+)
 - [ ] Publish to ClawHub (`openclaw skill install layered-memstack`)
 - [ ] Interactive setup wizard (`layered-memstack init`)
 - [ ] Migration tool for existing OpenClaw memory setups
