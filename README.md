@@ -117,11 +117,59 @@ node scripts/memory-dedup.js --fix
 
 | Schedule | What |
 |---|---|
-| Daily 3:00 AM | Auto-summary → daily note + MEMORY.md update (with dedup) + entities.md update |
-| Daily 4:00 AM | Dedup check → runs --check and --fix post-summary |
+| Daily 3:00 AM | **Dreaming** (native OpenClaw) — consolidation sweep: light → REM → deep. Replaces manual auto-summary cron. |
 | Daily 11:00 PM | **Optional** — MCP audit → reviews external writes via MCP for suspicious content |
 | Weekly Sun 22:00 | Audit → clean expired TTLs, archive >14d notes, verify INDEX.md |
 | Heartbeat (configurable, ≤4h recommended) | Checkpoint if context usage >50% |
+
+> **Note:** The manual auto-summary cron (previously at 3 AM) and the dedup post-summary cron (4 AM) are superseded by OpenClaw's native **Dreaming** feature (available in OpenClaw 2026.4.8+). See the Dreaming section below for setup.
+
+---
+
+## Dreaming (OpenClaw 2026.4.8+)
+
+OpenClaw's native **Dreaming** replaces the manual 3 AM auto-summary cron. It runs a multi-phase consolidation sweep (light → REM → deep) directly against the memory index, without needing a prompt or agent turn.
+
+### What it does vs. the manual cron
+
+| | Manual cron (old) | Dreaming (native) |
+|---|---|---|
+| Consolidation | Agent reads transcripts + writes markdown | Runtime processes memory index directly |
+| Daily notes | Agent generates `memory/YYYY-MM-DD.md` | Native format, stored in memory layer |
+| MEMORY.md updates | Agent edits file | Handled by deep phase |
+| Entities | Agent updates `reference/entities.md` | Knowledge graph built natively |
+| Dedup | Separate 4 AM cron | Built-in |
+| Maintenance | Prompt engineering required | Zero-maintenance |
+
+### Setup
+
+Enable in `openclaw.json` under `plugins.entries.memory-core.config`:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "memory-core": {
+        "config": {
+          "dreaming": {
+            "enabled": true,
+            "frequency": "0 3 * * *",
+            "timezone": "Europe/Madrid"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Or via the OpenClaw config patch command:
+
+```bash
+openclaw config patch '{"plugins":{"entries":{"memory-core":{"config":{"dreaming":{"enabled":true,"frequency":"0 3 * * *","timezone":"Europe/Madrid"}}}}}}'
+```
+
+Once enabled, **delete the manual auto-summary cron** (and the dedup post-summary cron if you have one). Dreaming handles both.
 
 ---
 
@@ -279,6 +327,7 @@ The key insight: information that's always loaded should be minimal. Everything 
 - [x] Knowledge graph (`reference/entities.md`)
 - [x] Weekly audit and TTL cleanup
 - [x] memory-wiki integration (unsafe-local mode, OpenClaw 2026.4.8+)
+- [x] Dreaming integration (native OpenClaw consolidation, replaces manual auto-summary cron)
 - [ ] Publish to ClawHub (`openclaw skill install layered-memstack`)
 - [ ] Interactive setup wizard (`layered-memstack init`)
 - [ ] Migration tool for existing OpenClaw memory setups
