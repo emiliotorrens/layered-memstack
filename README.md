@@ -269,6 +269,19 @@ All workspace files are injected into every turn as context. This skill minimize
 
 ---
 
+## Active Memory: How layered-memstack Powers OpenClaw
+
+`layered-memstack` doesn't just organize memory; it serves as the fundamental engine for OpenClaw's "Active Memory." This architecture enables the agent to:
+
+- **Proactive Context Retrieval**: Utilizes `memory_search` to access L2 and L3 information only when relevant, keeping the core context (L1) light and efficient.
+- **Intelligent Consolidation**: Through integration with `Dreaming`, the knowledge base is automatically consolidated and pruned nightly, ensuring information is always fresh and free of duplicates.
+- **Coherence and Verification**: Integration with `memory-wiki` allows for structuring claims, detecting contradictions, and verifying data validity, building a more robust and reliable knowledge base.
+- **Continuous Evolution**: The system is designed so that memory not only stores data but also evolves and adapts to the agent's new interactions and learnings.
+
+In essence, `layered-memstack` transforms static memory into a dynamic and proactive system, optimizing the agent's performance and responsiveness.
+
+---
+
 ## Related
 
 - **[mem-persistence](https://github.com/emiliotorrens/mem-persistence)** — MCP server to share this memory with Claude Desktop, Claude Code, Cursor, and other agents
