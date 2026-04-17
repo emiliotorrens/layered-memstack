@@ -7,6 +7,7 @@ An opinionated memory architecture for OpenClaw agents: curated core memory (L1)
 ## What It Does
 
 - **Layered memory structure** — L1 (MEMORY.md, always loaded, ~50-60 lines of breadcrumbs), L2 (topic files + daily notes), L3 (deep references, loaded on demand)
+- **BOOTSTRAP.md snapshot** — single compiled file replacing 4–6 per-session reads; reduces token cost ~30-50% at session start
 - **Nightly consolidation** — via OpenClaw's native Dreaming (2026.4.8+), or a manual cron for older versions
 - **Deduplication** — prevents writing the same fact twice using token similarity + entity overlap
 - **Knowledge graph** — `reference/entities.md` maps people, places, projects, and their relationships
@@ -20,6 +21,7 @@ An opinionated memory architecture for OpenClaw agents: curated core memory (L1)
 
 ```
 workspace/
+├── BOOTSTRAP.md          ← compiled snapshot (generated nightly, single read at session start)
 ├── MEMORY.md              ← L1: breadcrumbs + pointers (~50-60 lines, always loaded)
 ├── INDEX.md               ← catalog of all files with tags
 ├── memory/
@@ -32,6 +34,7 @@ workspace/
 │   ├── entities.md        ← knowledge graph
 │   └── *.md               ← L3: deep dives (loaded on demand)
 └── scripts/
+    ├── build-bootstrap.js ← compiles BOOTSTRAP.md from memory files
     └── memory-dedup.js    ← dedup engine
 ```
 
@@ -58,6 +61,52 @@ Topic files (`memory/viajes.md`, `memory/salud.md`) hold mid-level context organ
 ### L3 — Deep References
 
 Detailed docs (`reference/china_2026.md`, `reference/integraciones.md`) only loaded when search finds them relevant.
+
+---
+
+## BOOTSTRAP.md — Session Cost Optimization
+
+`BOOTSTRAP.md` is a **compiled snapshot** that replaces reading 4–6 separate memory files at session start. One read instead of many.
+
+### What it contains
+
+- `MEMORY.md` curated facts (truncated ~2000 chars)
+- Daily notes: today + yesterday (~1500 chars each)
+- Topic summaries: `memory/viajes.md`, `memory/salud.md`, `memory/tecnico.md` (~800 chars each)
+- Upcoming trips: first 60 lines of `reference/viajes-kayak.md`
+- Recent health data: last 15 lines of `reference/salud-datos.md`
+
+**Typical size:** ~8KB. vs ~40-80KB reading files individually.
+
+### Generate
+
+```bash
+node scripts/build-bootstrap.js
+```
+
+### Nightly cron (2:50 AM)
+
+```json
+{
+  "name": "Build BOOTSTRAP.md",
+  "schedule": { "kind": "cron", "expr": "50 2 * * *", "tz": "Europe/Madrid" },
+  "payload": {
+    "kind": "agentTurn",
+    "model": "google/gemini-2.5-flash",
+    "message": "Ejecuta: node /path/to/scripts/build-bootstrap.js\nResponde siempre: OK"
+  }
+}
+```
+
+### AGENTS.md setup
+
+```markdown
+## Every Session
+1. Read `BOOTSTRAP.md` — compiled snapshot (replaces reading multiple memory files)
+   - Fallback if missing/stale (>24h): read `memory/YYYY-MM-DD.md` (today + yesterday)
+2. Read `SOUL.md` and `USER.md`
+3. Use `memory_search` for anything beyond recent context
+```
 
 ---
 

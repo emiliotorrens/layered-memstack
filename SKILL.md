@@ -3,13 +3,15 @@ name: layered-memstack
 description: >
   3-layer persistent memory system for OpenClaw agents. Provides structured memory with
   L1 (core facts in MEMORY.md), L2 (topic files + daily notes), L3 (deep references +
-  knowledge graph). Includes automated maintenance via OpenClaw native Dreaming (nightly
-  consolidation, 2026.4.8+), weekly audit cron for TTL cleanup and archiving, deduplication
-  engine, and knowledge graph. Optionally extends with memory-wiki for structured claims,
-  contradiction detection, and staleness dashboards. Use when: setting up agent memory from
-  scratch, organizing existing workspace notes into layers, automating memory maintenance,
-  preventing duplicate entries, managing a knowledge graph of entities, archiving old daily
-  notes, or configuring memorySearch for multi-layer retrieval with temporal decay and MMR.
+  knowledge graph). Includes BOOTSTRAP.md compilation (single compiled snapshot replacing
+  multiple per-session file reads), automated maintenance via OpenClaw native Dreaming
+  (nightly consolidation, 2026.4.8+), weekly audit cron for TTL cleanup and archiving,
+  deduplication engine, and knowledge graph. Optionally extends with memory-wiki for
+  structured claims, contradiction detection, and staleness dashboards. Use when: setting
+  up agent memory from scratch, organizing existing workspace notes into layers, automating
+  memory maintenance, preventing duplicate entries, managing a knowledge graph of entities,
+  archiving old daily notes, reducing per-session token cost via BOOTSTRAP.md, or
+  configuring memorySearch for multi-layer retrieval with temporal decay and MMR.
 ---
 
 # layered-memstack
@@ -274,11 +276,44 @@ Add to workspace AGENTS.md:
 
 ```markdown
 ## Memory
-1. Read `MEMORY.md` at session start (L1 — breadcrumbs + pointers, ~50-60 lines)
-2. Read `memory/YYYY-MM-DD.md` for today + yesterday (L2)
-3. Use `memory_search` for anything beyond recent context
-4. MEMORY.md = pointers only. Detail goes in reference/ or memory/ files.
-5. Before writing to MEMORY.md: `node scripts/memory-dedup.js --query "text"`
-6. After writing: `node scripts/memory-dedup.js --fix`
-7. Items with TTL: `<!-- ttl:YYYY-MM-DD -->` — cleaned weekly
+1. Read `BOOTSTRAP.md` at session start — compiled snapshot (MEMORY.md + recent daily notes + topic summaries + viajes + salud). Single file, ~8KB.
+   - If BOOTSTRAP.md is missing or stale (>24h), fall back: read `memory/YYYY-MM-DD.md` (today + yesterday)
+2. Use `memory_search` for anything beyond recent context (L2/L3 deep retrieval)
+3. MEMORY.md = breadcrumbs + pointers only. Detail goes in reference/ or memory/ files.
+4. Before writing to MEMORY.md: `node scripts/memory-dedup.js --query "text"`
+5. After writing: `node scripts/memory-dedup.js --fix`
+6. Items with TTL: `<!-- ttl:YYYY-MM-DD -->` — cleaned weekly
+```
+
+## BOOTSTRAP.md (compiled snapshot)
+
+BOOTSTRAP.md is a **single compiled file** that replaces reading multiple memory files at session start.
+It reduces per-session tool calls from 4–6 file reads to 1.
+
+### Generate
+
+```bash
+node scripts/build-bootstrap.js
+```
+
+### Contents
+- `MEMORY.md` (curated facts, truncated to 2000 chars)
+- Daily notes: today + yesterday (1500 chars each)
+- Topic files: `memory/viajes.md`, `memory/salud.md`, `memory/tecnico.md` (800 chars each)
+- `reference/viajes-kayak.md` first 60 lines (upcoming trips)
+- `reference/salud-datos.md` last 15 lines (recent health data)
+
+### Maintenance cron (2:50 AM daily)
+
+Create via:
+```bash
+openclaw cron add --name "Build BOOTSTRAP.md" \
+  --schedule "50 2 * * *" --tz Europe/Madrid \
+  --model flash \
+  --message "Ejecuta: node /path/to/scripts/build-bootstrap.js\nResponde siempre: OK"
+```
+
+Or use the setup script:
+```bash
+bash scripts/setup-crons.sh --tz Europe/Madrid --channel telegram --to CHAT_ID
 ```
