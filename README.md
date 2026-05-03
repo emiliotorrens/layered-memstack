@@ -94,7 +94,7 @@ node scripts/build-bootstrap.js
   "schedule": { "kind": "cron", "expr": "50 2 * * *", "tz": "Europe/Madrid" },
   "payload": {
     "kind": "agentTurn",
-    "model": "google/gemini-2.5-flash",
+    "model": "haiku",  // or any fast/cheap model alias
     "message": "Ejecuta: node /path/to/scripts/build-bootstrap.js\nResponde siempre: OK"
   }
 }
