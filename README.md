@@ -151,6 +151,8 @@ node scripts/memory-dedup.js --fix
 
 Algorithm: Jaccard similarity + containment ratio + entity overlap (dates, IDs, versions, URLs). Threshold: 0.65 (configurable via `--threshold`).
 
+> **Note (OpenClaw 2026.4.8+):** Dreaming injects `<!-- openclaw-memory-promotion:... -->` provenance markers into MEMORY.md. The dedup engine automatically skips these lines to avoid false positives (fixed in `fd389b9`).
+
 ---
 
 ## Automated Maintenance
