@@ -179,7 +179,7 @@ function parseMemory(content) {
     if (/^#{1,3}\s/.test(line)) {
       if (currentSection.lines.length) sections.push(currentSection);
       currentSection = { heading: line.trim(), startLine: i, lines: [] };
-    } else if (line.trim()) {
+    } else if (line.trim() && !/<!--\s*openclaw-memory-promotion:/.test(line)) {
       currentSection.lines.push({ text: line, lineNum: i });
     }
   }
@@ -256,6 +256,7 @@ function dedup(content, threshold = DEFAULT_THRESHOLD) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (!line.trim() || /^#{1,3}\s/.test(line)) continue;
+    if (/<!--\s*openclaw-memory-promotion:/.test(line)) continue; // skip Dreaming markers
     const norm = normalize(line);
     if (norm.length < 10) continue;
 
@@ -270,6 +271,7 @@ function dedup(content, threshold = DEFAULT_THRESHOLD) {
   const contentLines = [];
   for (let i = 0; i < lines.length; i++) {
     if (!lines[i].trim() || /^#{1,3}\s/.test(lines[i]) || toRemove.has(i)) continue;
+    if (/<!--\s*openclaw-memory-promotion:/.test(lines[i])) continue; // skip Dreaming markers
     if (normalize(lines[i]).length < 10) continue;
     contentLines.push({ text: lines[i], idx: i });
   }
