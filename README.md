@@ -11,9 +11,9 @@ An opinionated memory architecture for OpenClaw agents: curated core memory (L1)
 - **Nightly consolidation** — via OpenClaw's native Dreaming (2026.4.8+), or a manual cron for older versions
 - **Deduplication** — prevents writing the same fact twice using token similarity + entity overlap
 - **Knowledge graph** — `reference/entities.md` maps people, places, projects, and their relationships
-- **Weekly audit** — cleans expired TTL entries, archives old daily notes, verifies INDEX.md
+- **Weekly audit** — cleans expired TTL entries, archives old daily notes, runs dedup, warns if L1 grows too large
 - **Temporal decay search** — recent notes rank higher, old notes fade
-- **Heartbeat checkpoints** — saves context snapshots when session usage is high
+- **Heartbeat checkpoints** — saves context snapshots when session usage exceeds 50%
 
 ---
 
@@ -22,20 +22,20 @@ An opinionated memory architecture for OpenClaw agents: curated core memory (L1)
 ```
 workspace/
 ├── BOOTSTRAP.md          ← compiled snapshot (generated nightly, single read at session start)
-├── MEMORY.md              ← L1: breadcrumbs + pointers (~50-60 lines, always loaded)
-├── INDEX.md               ← catalog of all files with tags
+├── MEMORY.md             ← L1: breadcrumbs + pointers (~50-60 lines, always loaded)
+├── INDEX.md              ← catalog of all files with tags
 ├── memory/
-│   ├── viajes.md          ← L2: topic breadcrumbs
+│   ├── viajes.md         ← L2: topic breadcrumbs
 │   ├── salud.md
 │   ├── tecnico.md
-│   ├── 2026-03-31.md      ← L2: daily notes
-│   └── archive/           ← dailies older than 14 days
+│   ├── 2026-03-31.md     ← L2: daily notes
+│   └── archive/          ← dailies older than 14 days
 ├── reference/
-│   ├── entities.md        ← knowledge graph
-│   └── *.md               ← L3: deep dives (loaded on demand)
+│   ├── entities.md       ← knowledge graph
+│   └── *.md              ← L3: deep dives (loaded on demand)
 └── scripts/
-    ├── build-bootstrap.js ← compiles BOOTSTRAP.md from memory files
-    └── memory-dedup.js    ← dedup engine
+    ├── build-bootstrap.js  ← compiles BOOTSTRAP.md from memory files
+    └── memory-dedup.js     ← dedup engine
 ```
 
 ---
@@ -53,6 +53,8 @@ TTL support for time-bound items:
 ```markdown
 - Cancel Fitbit Premium <!-- ttl:2026-05-01 -->
 ```
+
+TTLs are cleaned automatically by the weekly audit cron.
 
 ### L2 — Topic Files & Daily Notes
 
@@ -76,7 +78,7 @@ Detailed docs (`reference/china_2026.md`, `reference/integraciones.md`) only loa
 - Upcoming trips: first 60 lines of `reference/viajes-kayak.md`
 - Recent health data: last 15 lines of `reference/salud-datos.md`
 
-**Typical size:** ~8KB. vs ~40-80KB reading files individually.
+**Typical size:** ~8KB vs ~40-80KB reading files individually.
 
 ### Generate
 
@@ -96,16 +98,6 @@ node scripts/build-bootstrap.js
     "message": "Ejecuta: node /path/to/scripts/build-bootstrap.js\nResponde siempre: OK"
   }
 }
-```
-
-### AGENTS.md setup
-
-```markdown
-## Every Session
-1. Read `BOOTSTRAP.md` — compiled snapshot (replaces reading multiple memory files)
-   - Fallback if missing/stale (>24h): read `memory/YYYY-MM-DD.md` (today + yesterday)
-2. Read `SOUL.md` and `USER.md`
-3. Use `memory_search` for anything beyond recent context
 ```
 
 ---
@@ -136,17 +128,20 @@ node scripts/build-bootstrap.js
 
 ## Deduplication
 
-Before writing to MEMORY.md, check for similar existing content:
+Before writing to MEMORY.md, always check for similar existing content:
 
 ```bash
-# Check single line (exit 0 = duplicate, exit 1 = new)
+# Check single line (exit 0 = duplicate → skip, exit 1 = new → safe to add)
 node scripts/memory-dedup.js --query "GitHub configured with gh auth login"
 
-# Check batch
-node scripts/memory-dedup.js --query-batch /tmp/candidates.txt
-
-# Clean existing file
+# After any write, clean the file
 node scripts/memory-dedup.js --fix
+
+# Inspect what would be removed (read-only)
+node scripts/memory-dedup.js --check
+
+# Batch query: filter lines from a file
+node scripts/memory-dedup.js --query-batch /tmp/candidates.txt
 ```
 
 Algorithm: Jaccard similarity + containment ratio + entity overlap (dates, IDs, versions, URLs). Threshold: 0.65 (configurable via `--threshold`).
@@ -159,10 +154,11 @@ Algorithm: Jaccard similarity + containment ratio + entity overlap (dates, IDs, 
 
 | What | When | How |
 |---|---|---|
-| **Nightly consolidation** | 3:00 AM | Dreaming (native OpenClaw 2026.4.8+) — multi-phase sweep with built-in dedup |
-| **Weekly audit** | Sunday 22:00 | Cron — cleans TTLs, archives old dailies, verifies INDEX.md |
-| **MCP audit** (optional) | 11:00 PM | Cron — reviews external MCP writes for suspicious content |
-| **Heartbeat checkpoint** | Every ≤4h | Saves context if session usage >50% |
+| **BOOTSTRAP.md build** | 2:50 AM daily | Cron — compiles snapshot from all memory files |
+| **Nightly consolidation** | 3:00 AM daily | Dreaming (native OpenClaw 2026.4.8+) — multi-phase sweep with built-in dedup |
+| **Weekly audit** | Monday 3:00 AM | Cron — archives old dailies, cleans TTLs, dedup, size check |
+| **MCP audit** (optional) | 11:00 PM daily | Cron — reviews external MCP writes for suspicious content |
+| **Heartbeat checkpoint** | On context threshold | Silent save at 50–79%; full save + alert at ≥80% |
 
 ---
 
@@ -198,6 +194,34 @@ Dreaming replaces the manual 3 AM auto-summary cron. It runs a multi-phase conso
 ```
 
 Once enabled, delete any manual auto-summary and dedup crons — Dreaming handles both.
+
+---
+
+## Heartbeat Checkpoints
+
+Configure in HEARTBEAT.md (not a separate cron). Check context usage via `session_status` on every heartbeat:
+
+| Usage | Action |
+|-------|--------|
+| < 50% | No action |
+| 50–79% | **Silent checkpoint** — append `## Checkpoint [HH:MM]` to `memory/YYYY-MM-DD.md` with decisions, pending tasks, key facts. Do not alert the user. |
+| ≥ 80% | **Full checkpoint** — save everything + alert user to consider `/new` |
+
+This ensures nothing is lost before context compaction, without spamming the user.
+
+---
+
+## Weekly Audit Cron
+
+Schedule: `0 3 * * 1` (Monday 3:00 AM, your timezone). Session: isolated agentTurn.
+
+The audit prompt should instruct the agent to run these steps in order:
+
+1. **Archive old dailies** — move `memory/YYYY-MM-DD.md` files older than 14 days to `memory/archive/`
+2. **Clean expired TTLs** — remove lines from MEMORY.md where `<!-- ttl:YYYY-MM-DD -->` date has passed
+3. **Run dedup** — `node scripts/memory-dedup.js --fix`
+4. **Check L1 size** — `wc -l MEMORY.md` — warn if > 70 lines (detail should move to reference/)
+5. **Report** — send summary of changes; stay silent if nothing to do
 
 ---
 
@@ -265,11 +289,12 @@ Or as a local skill in `openclaw.json`:
 
 ### Setup steps
 
-1. Create the directory structure (`mkdir -p memory/archive reference scripts`)
-2. Copy `scripts/memory-dedup.js` to your workspace
-3. Configure `memorySearch.extraPaths` (see below)
-4. Enable Dreaming (see above)
-5. Run `bash scripts/setup-crons.sh` for the weekly audit cron
+1. Create the directory structure: `mkdir -p memory/archive reference scripts`
+2. Copy `scripts/memory-dedup.js` to your workspace `scripts/`
+3. Copy `scripts/build-bootstrap.js` to your workspace `scripts/`
+4. Configure `memorySearch.extraPaths` (see Configuration below)
+5. Enable Dreaming (see above)
+6. Run `bash scripts/setup-crons.sh` for the weekly audit and BOOTSTRAP crons
 
 ```bash
 bash scripts/setup-crons.sh --tz Europe/Madrid --channel telegram --to "CHAT_ID"
@@ -299,12 +324,17 @@ Add to `agents.defaults.memorySearch` in `openclaw.json`:
 ### Recommended AGENTS.md additions
 
 ```markdown
-## Memory
-1. Read `MEMORY.md` at session start (breadcrumbs + pointers, ~50-60 lines)
-2. Read `memory/YYYY-MM-DD.md` for today + yesterday
+## Every Session
+1. Read `BOOTSTRAP.md` — compiled snapshot (replaces reading multiple memory files).
+   Fallback if missing or stale (>24h): read `memory/YYYY-MM-DD.md` (today + yesterday).
+2. Read `SOUL.md` and `USER.md`
 3. Use `memory_search` for anything beyond recent context
-4. MEMORY.md = pointers only. Detail goes in reference/ or memory/.
-5. Update MEMORY.md only for genuinely new long-term facts
+
+## Memory Rules
+- MEMORY.md = breadcrumbs + pointers only. Detail goes in reference/ or memory/.
+- Before writing to MEMORY.md: `node scripts/memory-dedup.js --query "text"` (exit 0 = dup, skip; exit 1 = new, ok)
+- After writing to MEMORY.md: `node scripts/memory-dedup.js --fix`
+- Time-bound items: add `<!-- ttl:YYYY-MM-DD -->` — cleaned by weekly audit
 ```
 
 ---
@@ -317,19 +347,6 @@ All workspace files are injected into every turn as context. This skill minimize
 - **Detail lives in L2/L3** — loaded on demand via `memory_search`
 - **Automated maintenance** prevents MEMORY.md from growing back
 - **Real-world savings**: ~56% reduction in workspace injection tokens (from ~6K to ~2.7K tokens/turn)
-
----
-
-## Active Memory: How layered-memstack Powers OpenClaw
-
-`layered-memstack` doesn't just organize memory; it serves as the fundamental engine for OpenClaw's "Active Memory." This architecture enables the agent to:
-
-- **Proactive Context Retrieval**: Utilizes `memory_search` to access L2 and L3 information only when relevant, keeping the core context (L1) light and efficient.
-- **Intelligent Consolidation**: Through integration with `Dreaming`, the knowledge base is automatically consolidated and pruned nightly, ensuring information is always fresh and free of duplicates.
-- **Coherence and Verification**: Integration with `memory-wiki` allows for structuring claims, detecting contradictions, and verifying data validity, building a more robust and reliable knowledge base.
-- **Continuous Evolution**: The system is designed so that memory not only stores data but also evolves and adapts to the agent's new interactions and learnings.
-
-In essence, `layered-memstack` transforms static memory into a dynamic and proactive system, optimizing the agent's performance and responsiveness.
 
 ---
 
@@ -349,8 +366,10 @@ In essence, `layered-memstack` transforms static memory into a dynamic and proac
 - [x] 3-layer memory structure
 - [x] Deduplication engine
 - [x] Knowledge graph
-- [x] Weekly audit and TTL cleanup
+- [x] Weekly audit with TTL cleanup, dedup, and size check
 - [x] Dreaming integration (OpenClaw 2026.4.8+)
+- [x] BOOTSTRAP.md compiled snapshot
+- [x] Heartbeat checkpoints (50/80% thresholds)
 - [x] memory-wiki integration (unsafe-local mode)
 - [ ] Publish to ClawHub
 - [ ] Interactive setup wizard
