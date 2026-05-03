@@ -31,6 +31,7 @@ reference/
 ├── *.md               ← L3: deep dives (loaded on demand via memory_search)
 scripts/
 └── memory-dedup.js    ← dedup engine
+BOOTSTRAP.md           ← compiled snapshot (generated nightly, single read at session start)
 ```
 
 ## Setup
@@ -147,7 +148,7 @@ node scripts/memory-dedup.js --check
 node scripts/memory-dedup.js --fix
 
 # Query single text against MEMORY.md
-node scripts/memory-dedup.js --query "GitHub configured" 
+node scripts/memory-dedup.js --query "GitHub configured"
 # Exit 0 = duplicate, Exit 1 = new
 
 # Batch query: filter lines from file
@@ -165,6 +166,8 @@ node scripts/memory-dedup.js --query-batch /tmp/candidates.txt
 Jaccard similarity + containment ratio + entity overlap + segment-level comparison.
 Entities extracted: dates, version numbers, hex IDs, phone numbers, amounts, chat IDs.
 Threshold 0.65 balances false positives vs missed duplicates.
+
+> **Note (OpenClaw 2026.4.8+):** Dreaming injects `<!-- openclaw-memory-promotion:... -->` provenance markers into MEMORY.md. The dedup engine automatically skips these lines to avoid false positives (fixed in `fd389b9`).
 
 ## Cron Setup
 
@@ -198,22 +201,21 @@ Enable in config:
 }
 ```
 
-### Cron 1: Weekly audit (Sunday 22:00)
+### Cron 1: Weekly audit (Monday 3:00 AM recommended)
 
 ```
-Schedule: 0 22 * * 0 (user timezone)
+Schedule: 0 3 * * 1 (user timezone)
 Session: isolated agentTurn
 ```
 
 Prompt should instruct the agent to:
-1. Clean expired TTL entries from MEMORY.md
-2. If MEMORY.md exceeds ~60 lines → aggressively prune (move detail to reference/)
-3. Move daily notes older than 14 days to `memory/archive/`
-4. Run `--fix` on MEMORY.md
-5. Verify INDEX.md is up to date
-6. Report summary of changes
+1. Move daily notes older than 14 days to `memory/archive/`
+2. Clean expired TTL entries from MEMORY.md (lines with `<!-- ttl:YYYY-MM-DD -->` past today)
+3. Run `--fix` on MEMORY.md
+4. If MEMORY.md exceeds ~70 lines → warn to prune (move detail to reference/)
+5. Report summary of changes (or stay silent if nothing to do)
 
-### Cron 3: MCP Memory Audit (daily 11:00 PM) — optional
+### Cron 2: MCP Memory Audit (daily 11:00 PM) — optional
 
 Only needed if using [mem-persistence](https://github.com/emiliotorrens/mem-persistence) MCP server.
 Enable with `--mcp-audit` flag in setup-crons.sh.
@@ -237,8 +239,12 @@ This protects against external agents (Claude Desktop, Cursor, etc.) writing une
 ### Heartbeat checkpoint
 
 Configure in HEARTBEAT.md (not a separate cron). Check context usage via `session_status`:
-- 50-79%: silent checkpoint to `memory/YYYY-MM-DD.md`
-- ≥80%: full checkpoint + alert user
+
+| Usage | Action |
+|-------|--------|
+| < 50% | No action |
+| 50–79% | Silent checkpoint to `memory/YYYY-MM-DD.md` — append `## Checkpoint [HH:MM]` with decisions, pending tasks, key facts |
+| ≥ 80% | Full checkpoint + alert user to consider `/new` |
 
 ## Knowledge Graph
 
@@ -280,9 +286,9 @@ Add to workspace AGENTS.md:
    - If BOOTSTRAP.md is missing or stale (>24h), fall back: read `memory/YYYY-MM-DD.md` (today + yesterday)
 2. Use `memory_search` for anything beyond recent context (L2/L3 deep retrieval)
 3. MEMORY.md = breadcrumbs + pointers only. Detail goes in reference/ or memory/ files.
-4. Before writing to MEMORY.md: `node scripts/memory-dedup.js --query "text"`
-5. After writing: `node scripts/memory-dedup.js --fix`
-6. Items with TTL: `<!-- ttl:YYYY-MM-DD -->` — cleaned weekly
+4. Before writing to MEMORY.md: `node scripts/memory-dedup.js --query "text"` (exit 0 = dup, skip; exit 1 = new, ok)
+5. After writing to MEMORY.md: `node scripts/memory-dedup.js --fix`
+6. Items with TTL: `<!-- ttl:YYYY-MM-DD -->` — cleaned by weekly audit cron
 ```
 
 ## BOOTSTRAP.md (compiled snapshot)
@@ -305,15 +311,14 @@ node scripts/build-bootstrap.js
 
 ### Maintenance cron (2:50 AM daily)
 
-Create via:
-```bash
-openclaw cron add --name "Build BOOTSTRAP.md" \
-  --schedule "50 2 * * *" --tz Europe/Madrid \
-  --model flash \
-  --message "Ejecuta: node /path/to/scripts/build-bootstrap.js\nResponde siempre: OK"
-```
-
-Or use the setup script:
-```bash
-bash scripts/setup-crons.sh --tz Europe/Madrid --channel telegram --to CHAT_ID
+```json
+{
+  "name": "Build BOOTSTRAP.md",
+  "schedule": { "kind": "cron", "expr": "50 2 * * *", "tz": "Europe/Madrid" },
+  "payload": {
+    "kind": "agentTurn",
+    "model": "google/gemini-2.5-flash",
+    "message": "Ejecuta: node /path/to/scripts/build-bootstrap.js\nResponde siempre: OK"
+  }
+}
 ```
