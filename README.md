@@ -34,8 +34,9 @@ workspace/
 │   ├── entities.md       ← knowledge graph
 │   └── *.md              ← L3: deep dives (loaded on demand)
 └── scripts/
-    ├── build-bootstrap.js  ← compiles BOOTSTRAP.md from memory files
-    └── memory-dedup.js     ← dedup engine
+    ├── build-bootstrap.js           ← compiles BOOTSTRAP.md from memory files
+    ├── memory-compact-promoted.js   ← prunes Dreaming-promoted duplicates from MEMORY.md
+    └── memory-dedup.js              ← dedup engine
 ```
 
 ---
@@ -156,6 +157,7 @@ Algorithm: Jaccard similarity + containment ratio + entity overlap (dates, IDs, 
 |---|---|---|
 | **BOOTSTRAP.md build** | 2:50 AM daily | Cron — compiles snapshot from all memory files |
 | **Nightly consolidation** | 3:00 AM daily | Dreaming (native OpenClaw 2026.4.8+) — multi-phase sweep with built-in dedup |
+| **Compact promoted blocks** | 3:15 AM daily | Cron — prunes duplicates Dreaming promoted into MEMORY.md (see below) |
 | **Weekly audit** | Monday 3:00 AM | Cron — archives old dailies, cleans TTLs, dedup, size check |
 | **MCP audit** (optional) | 11:00 PM daily | Cron — reviews external MCP writes for suspicious content |
 | **Heartbeat checkpoint** | On context threshold | Silent save at 50–79%; full save + alert at ≥80% |
@@ -194,6 +196,35 @@ Dreaming replaces the manual 3 AM auto-summary cron. It runs a multi-phase conso
 ```
 
 Once enabled, delete any manual auto-summary and dedup crons — Dreaming handles both.
+
+### The Dreaming promotion problem (and the fix)
+
+Dreaming injects high-score blocks from `memory/archive/YYYY-MM-DD.md` directly into MEMORY.md with provenance markers:
+
+```markdown
+<!-- openclaw-memory-promotion:memory:memory/archive/2026-03-09.md:22:48 -->
+- [1500 chars of original daily note content pasted verbatim...]
+```
+
+The **content is duplicated** — it still lives in the archive file, `memory_search` still finds it — but MEMORY.md grows by 500-1500 chars per promotion. After a few weeks of Dreaming runs, MEMORY.md balloons beyond the bootstrap injection limit (~12KB default), partially defeating the point of keeping L1 compact.
+
+**Fix:** `scripts/memory-compact-promoted.js` — runs daily at 3:15 AM (right after Dreaming finishes). For each promoted block older than 2 days, it verifies the source archive file still exists, then replaces the full block with a one-line reference stub:
+
+```markdown
+<!-- openclaw-memory-promotion:memory:memory/archive/2026-03-09.md:22:48 --> <!-- compacted:2026-05-04 -->
+- `memory/archive/2026-03-09.md` lines 22-48 (compacted 2026-05-04; search with memory_search or read archive)
+```
+
+No data is lost — the original content remains in the archive file and stays searchable. The script is idempotent (already-compacted blocks are skipped) and takes a backup (`MEMORY.md.bak-<timestamp>`) before mutating.
+
+```bash
+node scripts/memory-compact-promoted.js                   # apply
+node scripts/memory-compact-promoted.js --dry             # preview
+node scripts/memory-compact-promoted.js --min-age-days=0  # compact all (including today's)
+node scripts/memory-compact-promoted.js --workspace=/path # override workspace root
+```
+
+`setup-crons.sh` installs the daily cron automatically.
 
 ---
 
@@ -371,6 +402,7 @@ All workspace files are injected into every turn as context. This skill minimize
 - [x] BOOTSTRAP.md compiled snapshot
 - [x] Heartbeat checkpoints (50/80% thresholds)
 - [x] memory-wiki integration (unsafe-local mode)
+- [x] Daily compact of Dreaming-promoted blocks (prevents L1 bloat)
 - [ ] Publish to ClawHub
 - [ ] Interactive setup wizard
 - [ ] Migration tool for existing setups

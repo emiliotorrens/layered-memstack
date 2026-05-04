@@ -8,6 +8,11 @@
 #       It is replaced by OpenClaw's native Dreaming feature (OpenClaw 2026.4.8+).
 #       Enable Dreaming instead — see README.md for setup.
 #
+#       Dreaming promotes full blocks from archived daily notes into MEMORY.md,
+#       which can inflate L1 beyond the bootstrap injection limit. Cron 3 below
+#       (daily compact) prunes those duplicates safely — the original content
+#       remains in memory/archive/.
+#
 # Requires: openclaw CLI available in PATH
 #
 
@@ -83,7 +88,37 @@ else
 fi
 echo ""
 
-# ─── Cron 2: MCP Memory Audit (daily 11:00 PM) — optional ──────────────────
+# ─── Cron 2: Daily compact of Dreaming-promoted blocks (3:15 AM) ─────────────
+
+COMPACT_MSG='Ejecuta: node /path/to/workspace/scripts/memory-compact-promoted.js
+
+(Replace /path/to/workspace with your actual workspace root before running setup-crons.sh,
+or edit the generated cron manually after creation.)
+
+El script es idempotente: si no hay nada que compactar, termina rápido con '"'"'already clean'"'"'.
+
+Si la salida contiene '"'"'blocks compacted'"'"' con N>0: reporta brevemente el resultado (before → after bytes, N bloques).
+Si la salida es '"'"'already clean'"'"': responde NO_REPLY.
+Si hay error: reporta '"'"'MEMORY compact — error: [descripción]'"'"'.'
+
+echo "🧹 Cron 2/3: Daily compact of promoted blocks (3:15 AM)"
+if [[ "$DRY_RUN" == "true" ]]; then
+  echo "   [dry-run] Would create: --cron '15 3 * * *' --tz $TZ --name 'memstack: compact-promoted'"
+else
+  openclaw cron add \
+    --name "memstack: compact-promoted" \
+    --cron "15 3 * * *" \
+    --tz "$TZ" \
+    --session isolated \
+    --message "$COMPACT_MSG" \
+    --timeout-seconds 60 \
+    $MODEL_ARGS \
+    $DELIVER_ARGS \
+    --json 2>&1 | tail -1
+fi
+echo ""
+
+# ─── Cron 3: MCP Memory Audit (daily 11:00 PM) — optional ──────────────────
 
 AUDIT_MSG='You are the MCP memory security auditor. Do the following:
 
@@ -102,7 +137,7 @@ AUDIT_MSG='You are the MCP memory security auditor. Do the following:
 5. If ALL NORMAL: report stats summary silently to logs channel.
    If SUSPICIOUS or DANGEROUS: alert user directly with full details of each flagged operation.'
 
-echo "🔒 Cron 2/2: MCP Memory Audit (daily 11:00 PM)"
+echo "🔒 Cron 3/3: MCP Memory Audit (daily 11:00 PM)"
 if [[ "$MCP_AUDIT" != "true" ]]; then
   echo "   [skipped] Pass --mcp-audit to enable (only needed if using mem-persistence MCP server)"
 else
@@ -127,6 +162,7 @@ echo "✅ Done! Run 'openclaw cron list' to verify."
 echo ""
 echo "📋 Crons managed by layered-memstack:"
 echo "   • memstack: weekly-audit — every Sunday 22:00 (TTL cleanup, archive, INDEX)"
+echo "   • memstack: compact-promoted — daily 3:15 (prunes Dreaming-promoted duplicates from MEMORY.md)"
 [[ "$MCP_AUDIT" == "true" ]] && echo "   • memstack: mcp-audit — daily 23:00 (MCP write security audit)"
 echo ""
 echo "🧠 Dreaming (native OpenClaw) handles nightly memory consolidation at 3:00 AM."
