@@ -134,6 +134,23 @@ Or create them manually (see Cron Setup below).
 - Update `reference/entities.md` when new entities appear
 - Structure: sections by entity type (people, places, projects, etc.)
 
+### Compress-on-completion pattern (L3)
+
+When a long-running L3 doc closes (a trip ends, a project ships, an investigation wraps), the operational detail stops being read but the references (booking codes, IDs, lessons learned, pending refunds) still matter.
+
+**Pattern:** split the doc in two files instead of deleting either:
+
+- `reference/archive/<topic>.md` — compressed summary (~2–4 KB): key refs, totals, lessons, outstanding items. This is what `memory_search` surfaces and what humans skim.
+- `reference/archive/<topic>_full.md` — original verbatim (preserved, untouched). Linked from the summary's header (`Detalle completo → ...`).
+
+Why keep both:
+
+- The summary is what you actually need 99% of the time after completion.
+- The full doc is irreplaceable when a refund argument, a flight rebook, or a forensic question pops up months later. Compressing in place loses it.
+- Net effect: searches/loads hit ~4 KB instead of ~20 KB, with zero data loss.
+
+Rule of thumb: apply when the doc is ≥ 10 KB, has been read-only for ≥ 2 weeks, and represents a closed event. The optional analytical audit (see Cron Setup → Cron 1b) is a natural place to flag candidates.
+
 ## Dedup Engine
 
 `scripts/memory-dedup.js` — token-based similarity without embeddings.
@@ -214,6 +231,42 @@ Prompt should instruct the agent to:
 3. Run `--fix` on MEMORY.md
 4. If MEMORY.md exceeds ~70 lines → warn to prune (move detail to reference/)
 5. Report summary of changes (or stay silent if nothing to do)
+
+Use a small/cheap model (e.g. Haiku). This pass is mechanical: no judgment calls, just rules.
+
+### Cron 1b (optional): Analytical audit (Sunday 22:00 recommended)
+
+The mechanical audit above ships fixes but doesn't propose structural changes. A complementary weekly pass with a stronger model surfaces things the mechanical pass can't:
+
+- Files growing past comfort thresholds (e.g. >8 KB in `reference/`) that may need splitting or compressing
+- Orphan references (files with no pointer in MEMORY.md or INDEX.md)
+- Topic blocks in MEMORY.md dense enough to deserve their own `memory/<topic>.md` breadcrumb
+- L3 docs eligible for the **compress-on-completion** pattern (closed trips/projects)
+- INDEX.md drift vs actual filesystem state
+
+```
+Schedule: 0 22 * * 0 (user timezone)
+Session: isolated agentTurn
+Model: a stronger reasoning model (Opus / Sonnet / Gemini Pro)
+```
+
+Prompt structure:
+1. **Inventory** — list `memory/` and `reference/` with sizes; read MEMORY.md; `wc -l` and `du -sh`.
+2. **Analyze** — flag oversized files, orphan refs, dailies >14d, MEMORY.md size target, topic-block candidates, structural drift, INDEX.md coherence.
+3. **Auto-apply safe fixes only** — expired TTLs, archiving stale dailies, INDEX.md sync.
+4. **Propose (do not execute)** — anything destructive or structural: file deletions, splits, breadcrumb extraction, compress-on-completion candidates.
+5. **Report** — single summary to the user (and/or a logs channel) with applied actions and proposals.
+
+The two audits are complementary, not redundant:
+
+| | Mechanical (Mon 03:00) | Analytical (Sun 22:00) |
+|---|---|---|
+| **Cost** | Cheap (Haiku class) | Higher (Opus/Sonnet class) |
+| **Behavior** | Executes deterministic rules | Reads, judges, proposes |
+| **Output** | Silent unless changes | Always reports inventory + suggestions |
+| **When** | Start of week | End of week / Sunday review |
+
+Skip this cron if token budget matters more than structural drift. Keep it if your memory system grows organically and you want a weekly second opinion that catches what rule-based passes miss.
 
 ### Cron 2: MCP Memory Audit (daily 11:00 PM) — optional
 

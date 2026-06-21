@@ -65,6 +65,19 @@ Topic files (`memory/viajes.md`, `memory/salud.md`) hold mid-level context organ
 
 Detailed docs (`reference/china_2026.md`, `reference/integraciones.md`) only loaded when search finds them relevant.
 
+#### Compress-on-completion pattern
+
+When a long-running L3 doc closes (a trip ends, a project ships, an investigation wraps), the operational detail stops being read but the references (booking codes, IDs, lessons, pending refunds) still matter.
+
+Instead of deleting or shrinking the doc in place, split it in two:
+
+- `reference/archive/<topic>.md` — compressed summary (~2–4 KB): key refs, totals, lessons, outstanding items. This is what `memory_search` surfaces and what humans skim.
+- `reference/archive/<topic>_full.md` — original verbatim, preserved. Linked from the summary header (`Detalle completo → ...`).
+
+Net effect: searches and loads hit ~4 KB instead of ~20 KB, with **zero data loss** — the full doc is still on disk, still indexed, still recoverable for refund arguments, rebooks, or forensic questions months later.
+
+Rule of thumb: apply when the doc is ≥ 10 KB, has been read-only for ≥ 2 weeks, and represents a closed event. The optional analytical audit (see [Automated Maintenance](#automated-maintenance)) is a natural place to flag candidates.
+
 ---
 
 ## BOOTSTRAP.md — Session Cost Optimization
@@ -158,7 +171,8 @@ Algorithm: Jaccard similarity + containment ratio + entity overlap (dates, IDs, 
 | **BOOTSTRAP.md build** | 2:50 AM daily | Cron — compiles snapshot from all memory files |
 | **Nightly consolidation** | 3:00 AM daily | Dreaming (native OpenClaw 2026.4.8+) — multi-phase sweep with built-in dedup |
 | **Compact promoted blocks** | 3:15 AM daily | Cron — prunes duplicates Dreaming promoted into MEMORY.md (see below) |
-| **Weekly audit** | Monday 3:00 AM | Cron — archives old dailies, cleans TTLs, dedup, size check |
+| **Weekly audit (mechanical)** | Monday 3:00 AM | Cron — archives old dailies, cleans TTLs, dedup, size check |
+| **Weekly audit (analytical)** | Sunday 22:00 — *optional* | Cron — inventory + structural drift + compress-on-completion candidates |
 | **MCP audit** (optional) | 11:00 PM daily | Cron — reviews external MCP writes for suspicious content |
 | **Heartbeat checkpoint** | On context threshold | Silent save at 50–79%; full save + alert at ≥80% |
 
@@ -253,6 +267,39 @@ The audit prompt should instruct the agent to run these steps in order:
 3. **Run dedup** — `node scripts/memory-dedup.js --fix`
 4. **Check L1 size** — `wc -l MEMORY.md` — warn if > 70 lines (detail should move to reference/)
 5. **Report** — send summary of changes; stay silent if nothing to do
+
+Use a small/cheap model (e.g. Haiku). This pass is mechanical: no judgment calls, just rules.
+
+### Optional: Analytical audit (Sunday 22:00)
+
+The mechanical audit above ships fixes but doesn't propose structural changes. A complementary weekly pass with a stronger model surfaces things the mechanical pass can't:
+
+- Files growing past comfort thresholds (e.g. >8 KB in `reference/`) that may need splitting or compressing
+- Orphan references (files with no pointer in MEMORY.md or INDEX.md)
+- Topic blocks in MEMORY.md dense enough to deserve their own `memory/<topic>.md` breadcrumb
+- L3 docs eligible for the **compress-on-completion** pattern (closed trips/projects)
+- INDEX.md drift vs actual filesystem state
+
+Schedule: `0 22 * * 0` (Sunday 22:00 local time). Session: isolated agentTurn. Model: a stronger reasoning model (Opus / Sonnet / Gemini Pro).
+
+Prompt structure:
+
+1. **Inventory** — list `memory/` and `reference/` with sizes; read MEMORY.md; `wc -l` and `du -sh`.
+2. **Analyze** — flag oversized files, orphan refs, dailies >14d, MEMORY.md size target, topic-block candidates, structural drift, INDEX.md coherence.
+3. **Auto-apply safe fixes only** — expired TTLs, archiving stale dailies, INDEX.md sync.
+4. **Propose (do not execute)** — anything destructive or structural: file deletions, splits, breadcrumb extraction, compress-on-completion candidates.
+5. **Report** — single summary to the user (and/or a logs channel) with applied actions and proposals.
+
+The two audits are complementary, not redundant:
+
+| | Mechanical (Mon 03:00) | Analytical (Sun 22:00) |
+|---|---|---|
+| **Cost** | Cheap (Haiku class) | Higher (Opus/Sonnet class) |
+| **Behavior** | Executes deterministic rules | Reads, judges, proposes |
+| **Output** | Silent unless changes | Always reports inventory + suggestions |
+| **When** | Start of week | End of week / Sunday review |
+
+Skip this cron if token budget matters more than structural drift. Keep it if your memory system grows organically and you want a weekly second opinion that catches what rule-based passes miss.
 
 ---
 
