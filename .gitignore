@@ -1,4 +1,19 @@
 node_modules/
+
+# secrets & env
 .env
+.env.*
+*.key
+*.pem
+
+# local data & databases (facts store, indexes)
+data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# logs & scratch
 *.log
+tmp/
 .mem-persistence/

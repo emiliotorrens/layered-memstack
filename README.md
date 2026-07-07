@@ -4,6 +4,8 @@
 
 An opinionated memory architecture for OpenClaw agents: curated core memory (L1), topic files and daily notes (L2), and deep reference docs (L3) — with automated maintenance via Dreaming, deduplication, knowledge graph, and weekly audits.
 
+On top of storage, it ships a **retrieval toolkit** that markdown-first memory usually lacks: hybrid keyword search (BM25) fused with your semantic ranking, an escalation-only query-expansion loop, a structured facts store with a confidence ladder, and a wikilink/provenance validator. All zero-dependency, all optional.
+
 ## What It Does
 
 - **Layered memory structure** — L1 (MEMORY.md, always loaded, ~50-60 lines of breadcrumbs), L2 (topic files + daily notes), L3 (deep references, loaded on demand)
@@ -14,6 +16,10 @@ An opinionated memory architecture for OpenClaw agents: curated core memory (L1)
 - **Weekly audit** — cleans expired TTL entries, archives old daily notes, runs dedup, warns if L1 grows too large
 - **Temporal decay search** — recent notes rank higher, old notes fade
 - **Heartbeat checkpoints** — saves context snapshots when session usage exceeds 50%
+- **Hybrid keyword search** — BM25 over the memory markdown, fused with your semantic ranking via Reciprocal Rank Fusion. Catches exact tokens (IDs, filenames, proper nouns) that embeddings miss
+- **Thesaurus loop** — escalation-only query expansion: only fires when a search comes back weak, then rephrases locally and (if still weak) via an LLM
+- **Facts store** — structured (entity, attribute, value) lookups with a `verified → high_probability → false` confidence ladder, backed by built-in SQLite. Sub-millisecond exact recall for names, settings, and IDs
+- **Wikilink & provenance validation** — catches hallucinated `[[links]]` and enforces source footers on compiled pages
 
 ---
 
@@ -33,10 +39,16 @@ workspace/
 ├── reference/
 │   ├── entities.md       ← knowledge graph
 │   └── *.md              ← L3: deep dives (loaded on demand)
+├── data/
+│   └── facts.db                    ← structured facts store (SQLite, gitignored)
 └── scripts/
     ├── build-bootstrap.js           ← compiles BOOTSTRAP.md from memory files
     ├── memory-compact-promoted.js   ← prunes Dreaming-promoted duplicates from MEMORY.md
-    └── memory-dedup.js              ← dedup engine
+    ├── memory-dedup.js              ← dedup engine
+    ├── hybrid-search.js             ← BM25 keyword search + RRF fusion
+    ├── thesaurus-loop.js            ← escalation-only multi-query retrieval
+    ├── facts-store.js               ← structured KV facts with confidence ladder
+    └── wiki-validate.js             ← wikilink integrity + provenance footers
 ```
 
 ---
@@ -52,7 +64,7 @@ Always loaded at session start. Contains **breadcrumbs and pointers only** — n
 TTL support for time-bound items:
 
 ```markdown
-- Cancel Fitbit Premium <!-- ttl:2026-05-01 -->
+- Renew TLS certificate <!-- ttl:2026-05-01 -->
 ```
 
 TTLs are cleaned automatically by the weekly audit cron.
@@ -161,6 +173,88 @@ node scripts/memory-dedup.js --query-batch /tmp/candidates.txt
 Algorithm: Jaccard similarity + containment ratio + entity overlap (dates, IDs, versions, URLs). Threshold: 0.65 (configurable via `--threshold`).
 
 > **Note (OpenClaw 2026.4.8+):** Dreaming injects `<!-- openclaw-memory-promotion:... -->` provenance markers into MEMORY.md. The dedup engine automatically skips these lines to avoid false positives (fixed in `fd389b9`).
+
+---
+
+## Hybrid Search
+
+OpenClaw's `memory_search` is semantic (embeddings). Embeddings are great for meaning but blind to exact tokens — cron IDs, filenames, flags, accented proper nouns. `hybrid-search.js` adds the **keyword half**: classic Okapi BM25 over `MEMORY.md` + `memory/*.md` + `reference/*.md`, then fuses the two rankings with **Reciprocal Rank Fusion (RRF)**.
+
+```bash
+# BM25 only
+node scripts/hybrid-search.js "postgres backup cron id" --top 5
+
+# Hybrid: fuse with a semantic ranking (JSON array of "relpath#Lnn" ids, best first)
+node scripts/hybrid-search.js "invoice numbering scheme" --semantic semantic-ranked.json
+```
+
+- **Accent-insensitive** — `presión` and `presion` collide, so Spanish queries never miss on diacritics.
+- **Stopword-filtered** (ES/EN) — ubiquitous words like `me`/`de`/`the` don't drown out real matches.
+- **RRF needs no score normalization** — it's rank-based, so the keyword and semantic systems combine cleanly even though their scores live on different scales.
+
+> **Why fuse instead of replace?** Keyword and semantic retrieval fail differently. BM25 nails exact tokens but is blind to paraphrase; embeddings handle paraphrase but miss rare literal strings. Fusing both lifts recall with near-zero cost.
+
+---
+
+## Thesaurus Loop
+
+Every search commits to one phrasing. If a memory was filed under different words than you searched for, the match is weak or empty. `thesaurus-loop.js` fixes this with **multi-query retrieval that only fires on a miss** — a good search pays nothing.
+
+Three tiers of escalation:
+
+| Tier | Trigger | Cost |
+|---|---|---|
+| **0 — plain** | always | one search |
+| **1 — local expansion** | tier 0 came back weak | accent folding, singular/plural, synonym map — zero network, instant |
+| **2 — LLM expansion** | tier 1 still weak | Gemini Flash rephrases the query (thinking disabled, ~1s); fused via RRF |
+
+```bash
+node scripts/thesaurus-loop.js "how do I rotate the signing keys" --min 3
+# → escalates 0 → 1 → 2 only as needed; good queries resolve at tier 0
+
+node scripts/thesaurus-loop.js "deployment steps" --no-llm   # local tiers only
+```
+
+The LLM tier is optional (`GOOGLE_API_KEY`) and **network-safe**: an API failure degrades gracefully to the local results instead of breaking the search.
+
+> **Honest limitation:** if neither the query nor its rephrasings share any surface token with the target, BM25 can't reach it — that's the semantic layer's job, via the RRF fusion above. The two mechanisms are complementary, not redundant.
+
+---
+
+## Facts Store
+
+Semantic search is the wrong tool for "what's my API key?" or "which timezone is alice in?" — those are exact key-value lookups, not similarity problems. `facts-store.js` stores **(entity, attribute, value)** triples in built-in SQLite with a three-state **confidence ladder**:
+
+```
+verified  →  high_probability  →  false
+```
+
+New evidence reconciles automatically: same value promotes confidence; a higher-confidence contradiction replaces; a lower-confidence one is **rejected with a conflict warning** rather than silently dropped.
+
+```bash
+node scripts/facts-store.js save alice timezone "Europe/Madrid" --confidence verified --source USER.md
+node scripts/facts-store.js get alice timezone
+node scripts/facts-store.js query --entity alice
+node scripts/facts-store.js demote alice timezone        # mark wrong without a replacement
+```
+
+Reads are sub-millisecond. The ladder means the store sharpens over time instead of accumulating stale guesses. The DB lives at `data/facts.db` (gitignored).
+
+---
+
+## Wiki Validation
+
+For setups that compile memory into a linked wiki, `wiki-validate.js` enforces two integrity guarantees:
+
+1. **No hallucinated wikilinks** — every `[[target]]` (and `[[page#heading]]` anchor) must resolve to a real page. Broken/invented links are the #1 way an auto-compiled knowledge base rots silently.
+2. **Provenance footers** — compiled pages carry a footer listing the source ids that fed them, so any claim is auditable back to origin.
+
+```bash
+node scripts/wiki-validate.js validate --require-provenance     # exit 1 on any breakage → gate a compile step
+node scripts/wiki-validate.js stamp reference/acme-corp.md --sources "2026-07-07-1801,MEMORY.md#L20" --date 2026-07-07
+```
+
+Accent-tolerant, alias-aware (`[[Target|shown text]]`), and it ignores OpenClaw output directives (`[[reply_to_current]]`, `[[audio_as_voice]]`) that share the `[[...]]` syntax but aren't links.
 
 ---
 
@@ -347,6 +441,8 @@ Reads your existing files directly — nothing to migrate.
 
 ## Installation
 
+> **Requirements:** Node **≥ 22.5** (the facts store uses the built-in `node:sqlite` module — no native builds, no external packages). The retrieval scripts have zero dependencies. The LLM tier of the thesaurus loop is optional and needs a `GOOGLE_API_KEY`.
+
 > **Note:** Not yet published on ClawHub. Install from GitHub.
 
 ```bash
@@ -367,12 +463,11 @@ Or as a local skill in `openclaw.json`:
 
 ### Setup steps
 
-1. Create the directory structure: `mkdir -p memory/archive reference scripts`
-2. Copy `scripts/memory-dedup.js` to your workspace `scripts/`
-3. Copy `scripts/build-bootstrap.js` to your workspace `scripts/`
-4. Configure `memorySearch.extraPaths` (see Configuration below)
-5. Enable Dreaming (see above)
-6. Run `bash scripts/setup-crons.sh` for the weekly audit and BOOTSTRAP crons
+1. Create the directory structure: `mkdir -p memory/archive reference scripts data`
+2. Copy the `scripts/` files to your workspace `scripts/` (`memory-dedup.js`, `build-bootstrap.js`, `memory-compact-promoted.js`, and — optionally — `hybrid-search.js`, `thesaurus-loop.js`, `facts-store.js`, `wiki-validate.js`)
+3. Configure `memorySearch.extraPaths` (see Configuration below)
+4. Enable Dreaming (see above)
+5. Run `bash scripts/setup-crons.sh` for the weekly audit and BOOTSTRAP crons
 
 ```bash
 bash scripts/setup-crons.sh --tz Europe/Madrid --channel telegram --to "CHAT_ID"
@@ -437,6 +532,8 @@ All workspace files are injected into every turn as context. This skill minimize
 
 - **[OpenClaw community — layered memory post](https://www.reddit.com/r/openclaw/comments/1rnku5b/)** — the L1/L2/L3 architecture that inspired this
 - **[Signet AI](https://github.com/Signet-AI/signetai)** — knowledge graph inspiration
+- **[mem0](https://github.com/mem0ai/mem0)** — hybrid keyword+semantic retrieval; the fuse-don't-replace insight
+- **[mnemo-cortex](https://github.com/GuyMannDude/mnemo-cortex)** — the thesaurus loop (escalation-only multi-query), the facts store with a confidence ladder, and provenance-footer / wikilink validation
 - **[OpenClaw](https://github.com/openclaw/openclaw)** — the agent framework this was built for
 
 ## Roadmap
@@ -450,6 +547,12 @@ All workspace files are injected into every turn as context. This skill minimize
 - [x] Heartbeat checkpoints (50/80% thresholds)
 - [x] memory-wiki integration (unsafe-local mode)
 - [x] Daily compact of Dreaming-promoted blocks (prevents L1 bloat)
+- [x] Hybrid keyword search (BM25 + RRF fusion)
+- [x] Thesaurus loop (escalation-only query expansion)
+- [x] Facts store (SQLite KV + confidence ladder)
+- [x] Wikilink & provenance validation
+- [ ] Wire hybrid search + facts store into the live `memory_search` flow
+- [ ] Category classification of notes at write time
 - [ ] Publish to ClawHub
 - [ ] Interactive setup wizard
 - [ ] Migration tool for existing setups
