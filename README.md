@@ -445,6 +445,31 @@ Add to `agents.defaults.memorySearch` in `openclaw.json`:
 }
 ```
 
+### Embedding provider — local (recommended) vs cloud
+
+`memory_search` needs an embedding provider. **Local is recommended**, for two reasons learned in production:
+
+- **Robustness** — cloud providers (Gemini/OpenAI/Voyage) hit quota limits (HTTP 429) and can drift on config updates, pausing semantic search until you rebuild. Local depends on nobody.
+- **Privacy** — with cloud, every memory chunk (health, finances, family) is sent to the provider's API to be embedded. With local, **memory never leaves the server** — the right default for a personal 24/7 assistant holding sensitive data.
+
+The only trade-off is retrieval quality (local EmbeddingGemma = 768 dims vs Gemini's 3072), which is marginal for a personal corpus of a few thousand notes, at the cost of one always-on service (~600 MB–1 GB RAM).
+
+**Local setup (Ollama + EmbeddingGemma 300M):** install Ollama in user space, run it as a `systemd --user` service (survives reboots with linger enabled), then `ollama pull embeddinggemma` (621 MB · 768 dims · multilingual). In `openclaw.json`, declare the provider and point `memorySearch` at it:
+
+```json5
+{
+  "models": { "providers": { "ollama-local": {
+    "api": "ollama",
+    "baseUrl": "http://127.0.0.1:11434",
+    "apiKey": "ollama-local",
+    "models": [{ "id": "embeddinggemma", "name": "EmbeddingGemma 300M (local)" }]
+  } } },
+  "agents": { "defaults": { "memorySearch": { "provider": "ollama-local", "model": "embeddinggemma" } } }
+}
+```
+
+After any provider change, rebuild the index with `openclaw memory index --force`, then verify with `openclaw memory status --deep` (expect `Vector store: ready` and the new `Vector dims`).
+
 ### Recommended AGENTS.md additions
 
 ```markdown
@@ -485,6 +510,7 @@ All workspace files are injected into every turn as context. This skill minimize
 - **[Signet AI](https://github.com/Signet-AI/signetai)** — knowledge graph inspiration
 - **[mnemo-cortex](https://github.com/GuyMannDude/mnemo-cortex)** — the facts store with a confidence ladder
 - **[OpenClaw](https://github.com/openclaw/openclaw)** — the agent framework this was built for
+- **[Mario Andújar](https://github.com/marioandujar)** — local embeddings setup (Ollama + EmbeddingGemma) for private, quota-free memory search
 
 ## Roadmap
 
