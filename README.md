@@ -454,7 +454,9 @@ Add to `agents.defaults.memorySearch` in `openclaw.json`:
 
 The only trade-off is retrieval quality (local EmbeddingGemma = 768 dims vs Gemini's 3072), which is marginal for a personal corpus of a few thousand notes, at the cost of one always-on service (~600 MB–1 GB RAM).
 
-**Local setup (Ollama + EmbeddingGemma 300M):** install Ollama in user space, run it as a `systemd --user` service (survives reboots with linger enabled), then `ollama pull embeddinggemma` (621 MB · 768 dims · multilingual). In `openclaw.json`, declare the provider and point `memorySearch` at it:
+Both paths are supported — pick based on your resources.
+
+**Option A — Local (Ollama + EmbeddingGemma 300M) — recommended.** Install Ollama in user space, run it as a `systemd --user` service (survives reboots with linger enabled), then `ollama pull embeddinggemma` (621 MB · 768 dims · multilingual). In `openclaw.json`, declare the provider and point `memorySearch` at it:
 
 ```json5
 {
@@ -466,6 +468,12 @@ The only trade-off is retrieval quality (local EmbeddingGemma = 768 dims vs Gemi
   } } },
   "agents": { "defaults": { "memorySearch": { "provider": "ollama-local", "model": "embeddinggemma" } } }
 }
+```
+
+**Option B — Cloud (Gemini / OpenAI / Voyage) — zero setup.** If you can't spare the RAM/disk for a local model, or would rather not run an extra service, use a hosted provider instead. No install, and slightly higher retrieval quality (e.g. Gemini = 3072 dims) — at the cost of provider quotas (HTTP 429) and sending each chunk to the provider's API. Point `memorySearch` at the provider and supply the matching API key (e.g. `GEMINI_API_KEY`):
+
+```json5
+{ "agents": { "defaults": { "memorySearch": { "provider": "gemini", "model": "gemini-embedding-001" } } } }
 ```
 
 After any provider change, rebuild the index with `openclaw memory index --force`, then verify with `openclaw memory status --deep` (expect `Vector store: ready` and the new `Vector dims`).
