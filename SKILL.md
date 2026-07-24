@@ -63,6 +63,69 @@ Add to `openclaw.json` under `agents.defaults.memorySearch`:
 }
 ```
 
+### 3b. Embedding provider — local (recommended) vs cloud
+
+`memorySearch` needs an embedding provider. **We recommend local embeddings** over a cloud
+provider (Gemini/OpenAI/Voyage), for two reasons learned in production:
+
+1. **Robustness** — cloud providers suffer quota cutoffs (HTTP 429) and config *drift* on
+   updates, both of which pause semantic search until the index is rebuilt. Local depends on
+   no one.
+2. **Privacy** — with cloud, every memory chunk (health, finances, family) is sent to the
+   provider's API to be embedded. With local, **memory never leaves the server**. This is the
+   correct architecture for a personal 24/7 assistant holding sensitive data.
+
+The only trade-off is retrieval quality (local EmbeddingGemma = 768 dims vs Gemini's 3072),
+which is marginal for a personal corpus of a few thousand notes, plus one always-on service
+(~600 MB–1 GB RAM).
+
+**Option A — Local (Ollama + EmbeddingGemma 300M) — recommended**
+
+Install Ollama in user space (no sudo needed): download the release tarball from the
+[Ollama releases page](https://github.com/ollama/ollama/releases), unpack it under
+`~/.local`, and run `ollama serve` as a `systemd --user` unit so it survives reboots
+(with linger enabled). Then pull the embedding model:
+
+```bash
+loginctl enable-linger "$USER"          # user services keep running after logout/reboot
+systemctl --user enable --now ollama    # unit ExecStart=%h/.local/ollama/bin/ollama serve
+ollama pull embeddinggemma              # 621 MB · 768 dims · multilingual (good in Spanish)
+```
+
+Declare the provider in `openclaw.json` under `models.providers`, then point
+`memorySearch` at it:
+
+```json5
+{
+  "models": {
+    "providers": {
+      "ollama-local": {
+        "api": "ollama",
+        "baseUrl": "http://127.0.0.1:11434",
+        "apiKey": "ollama-local",
+        "models": [{ "id": "embeddinggemma", "name": "EmbeddingGemma 300M (local)" }]
+      }
+    }
+  },
+  "agents": { "defaults": { "memorySearch": {
+    "provider": "ollama-local",
+    "model": "embeddinggemma"
+  } } }
+}
+```
+
+**Option B — Cloud (Gemini)**
+
+Zero setup and slightly higher retrieval quality (3072 dims), but subject to quotas (429) and
+sends every chunk to Google. Fine when privacy is not critical. Set
+`memorySearch.provider: "gemini"` and provide a `GEMINI_API_KEY`.
+
+> **On any provider change**, the stored vectors no longer match the new provider/dimensions
+> and OpenClaw **pauses semantic search until the index is rebuilt**. Always run
+> `openclaw memory index --force` after switching, then verify with
+> `openclaw memory status --deep` (look for `Vector store: ready`, the correct `Vector dims`,
+> and a real `memory_search` returning hits).
+
 ### 4. Create starter files
 
 - **MEMORY.md** — see `references/memory-template.md`
@@ -375,3 +438,8 @@ node scripts/build-bootstrap.js
   }
 }
 ```
+
+## Credits
+
+- **Local embeddings setup** (Ollama + EmbeddingGemma for private, quota-free memory search)
+  contributed and validated by **Mario Andújar** — https://github.com/marioandujar
