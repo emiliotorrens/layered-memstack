@@ -14,6 +14,8 @@ It stays deliberately thin on retrieval — OpenClaw's `memory_search` already d
 - **Deduplication** — prevents writing the same fact twice using token similarity + entity overlap
 - **Knowledge graph** — `reference/entities.md` maps people, places, projects, and their relationships
 - **Weekly audit** — cleans expired TTL entries, archives old daily notes, runs dedup, warns if L1 grows too large
+- **Pointer integrity check** — deterministic detector for breadcrumbs pointing at files that no longer exist, the one rot an LLM audit reliably misses
+- **Cron health digest** — shrinks cron state from ~141 KB to ~1.7 KB so the audit pass that watches your other crons doesn't die of indigestion
 - **Temporal decay search** — recent notes rank higher, old notes fade
 - **Heartbeat checkpoints** — saves context snapshots when session usage exceeds 50%
 - **Facts store** — structured (entity, attribute, value) lookups with a `verified → high_probability → false` confidence ladder, backed by built-in SQLite. Sub-millisecond exact recall for names, settings, and IDs — the one retrieval gap the platform doesn't already fill
@@ -42,6 +44,8 @@ workspace/
     ├── build-bootstrap.js           ← compiles BOOTSTRAP.md from memory files
     ├── memory-compact-promoted.js   ← prunes Dreaming-promoted duplicates from MEMORY.md
     ├── memory-dedup.js              ← dedup engine
+    ├── memory-check-pointers.js     ← broken-pointer detector (live memory only)
+    ├── cron-health.js               ← pre-digests cron state for the audit pass
     └── facts-store.js               ← structured KV facts with confidence ladder
 ```
 
@@ -170,6 +174,49 @@ Algorithm: Jaccard similarity + containment ratio + entity overlap (dates, IDs, 
 
 ---
 
+## Pointer Integrity
+
+A layered memory system is held together by pointers: L1 points to L2, L2 points to L3, INDEX.md points at everything. Rename, archive or compress a file and the pointers to it rot silently — and a rotten pointer is worse than a missing note, because recall surfaces a breadcrumb that leads nowhere and the agent confidently reports "detail in `reference/foo.md`" for a file that no longer exists.
+
+```bash
+node scripts/memory-check-pointers.js          # human report, exit 1 if broken
+node scripts/memory-check-pointers.js --quiet  # one line per break (for crons)
+node scripts/memory-check-pointers.js --json   # machine-readable
+```
+
+It scans **live memory only** — root files (`MEMORY.md`, `AGENTS.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `BOOTSTRAP.md`, `INDEX.md`), `memory/*.md` and `reference/*.md`, no recursion. Archived notes legitimately point at files that were later moved, so flagging them produces noise instead of debt. Mark example paths in prose with `<!-- pointer-check:ignore -->`.
+
+**Why a script and not a prompt.** The direction of the check is what matters. An LLM audit asking "are there files with no pointer?" finds orphans; it does *not* find pointers with no file, and that is the harmful direction. Real case (2026-08-03): a weekly memory-audit cron reported OK for weeks while two dead pointers sat in a topic file, because it only checked the opposite direction. This runs in ~50 ms and gives a cron an exit code to branch on. It's step 1 of the mechanical weekly audit, with instructions to re-run until it exits 0.
+
+---
+
+## Cron Health — the watchdog paradox
+
+If you run an "audit my crons" cron, do **not** let the model list the crons itself. Handing it raw `openclaw cron list --all --json` means feeding it every job object you own — prompts, schedules, run history. Measured on a real install: 51 jobs → **141,563 bytes**, runs burning 250–630k tokens and failing ~40% of the time with a generic timeout.
+
+That failure is self-concealing: the watchdog is the thing that reports *other* crons failing, so when it dies of indigestion, nothing reports anything — including the memory audit that had been quietly skipping broken pointers for weeks. One clogged watchdog explains a whole system rotting unnoticed.
+
+```bash
+node scripts/cron-health.js          # compact text report
+node scripts/cron-health.js --json   # compact JSON
+# exit 0 = clean · 1 = jobs in error · 2 = gateway unreadable
+```
+
+It reads live gateway state and keeps only the actionable part: jobs in error (with model + timeout), persistent failures (≥2 consecutive — structural, not a provider hiccup), undelivered runs, enabled recurring jobs that never ran, and `agentTurn` jobs with no `timeoutSeconds`.
+
+| | Before | After |
+|---|---|---|
+| Input to the model | 141 KB | 1.7 KB (−98.8%) |
+| Audit run | error, 390k tokens, not delivered | ok, 174k tokens, 44 s, delivered |
+
+Three rules this encodes:
+
+- **Run the script, and forbid manual listing in the prompt — with the reason.** A model that finds the digest terse will "helpfully" fall back to the raw dump and reintroduce the bug.
+- **Always set `timeoutSeconds` on `agentTurn` crons.** No limit doesn't mean fails fast; it means fails silently and expensively. The digest counts these for you.
+- **Never enumerate jobs via the in-agent cron tool from inside a cron.** On isolated cron sessions the narrow self-cleanup grant filters the response to the current job, so the audit sees only itself and reports all-clear.
+
+---
+
 ## Facts Store
 
 Semantic search is the wrong tool for "what's my API key?" or "which timezone is alice in?" — those are exact key-value lookups, not similarity problems. `facts-store.js` stores **(entity, attribute, value)** triples in built-in SQLite with a three-state **confidence ladder**:
@@ -216,7 +263,7 @@ This skill is intentionally thin. OpenClaw's runtime already does the heavy retr
 | **BOOTSTRAP.md build** | 2:50 AM daily | Cron — compiles snapshot from all memory files |
 | **Nightly consolidation** | 3:00 AM daily | Dreaming (native OpenClaw 2026.4.8+) — multi-phase sweep with built-in dedup |
 | **Compact promoted blocks** | 3:15 AM daily | Cron — prunes duplicates Dreaming promoted into MEMORY.md (see below) |
-| **Weekly audit (mechanical)** | Monday 3:00 AM | Cron — archives old dailies, cleans TTLs, dedup, size check |
+| **Weekly audit (mechanical)** | Monday 3:40 AM | Cron — pointer check, archives old dailies, cleans TTLs, dedup, size check |
 | **Weekly audit (analytical)** | Sunday 22:00 — *optional* | Cron — inventory + structural drift + compress-on-completion candidates |
 | **MCP audit** (optional) | 11:00 PM daily | Cron — reviews external MCP writes for suspicious content |
 | **Heartbeat checkpoint** | On context threshold | Silent save at 50–79%; full save + alert at ≥80% |
@@ -532,6 +579,8 @@ All workspace files are injected into every turn as context. This skill minimize
 - [x] memory-wiki integration (unsafe-local mode)
 - [x] Daily compact of Dreaming-promoted blocks (prevents L1 bloat)
 - [x] Facts store (SQLite KV + confidence ladder)
+- [x] Deterministic pointer-integrity check (`memory-check-pointers.js`)
+- [x] Cron health digest to keep the audit watchdog from clogging (`cron-health.js`)
 - [ ] Expose the facts store as a callable tool (via the mem-persistence MCP bridge)
 - [ ] Category classification of notes at write time
 - [ ] Publish to ClawHub

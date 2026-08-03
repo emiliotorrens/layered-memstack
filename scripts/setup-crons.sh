@@ -60,32 +60,46 @@ echo "ℹ️  Note: The 3 AM auto-summary cron is handled by OpenClaw's native D
 echo "   Enable it with: openclaw config patch '{\"plugins\":{\"entries\":{\"memory-core\":{\"config\":{\"dreaming\":{\"enabled\":true,\"frequency\":\"0 3 * * *\",\"timezone\":\"$TZ\"}}}}}}'"
 echo ""
 
-# ─── Cron 1: Weekly audit (Sunday 22:00) ───────────────────────────────────
+# ─── Cron 1: Weekly mechanical audit (Monday 3:40) ─────────────────────────
+#
+# NOTE on timing: keep this away from Dreaming (3:00). Running both at once means the
+# audit rewrites MEMORY.md while the deep phase is writing to it.
 
-AUDIT_MSG='You are the memory audit agent. Do the following steps:
+AUDIT_MSG='You are the memory audit agent. This pass is mechanical: follow the rules, no judgment calls.
 
-1. Read MEMORY.md. Remove any line with <!-- ttl:YYYY-MM-DD --> where the date has passed.
-2. Move daily notes older than 14 days from memory/ to memory/archive/ (create archive/ if needed).
-3. Run: node scripts/memory-dedup.js --fix
-4. Read all files in memory/ and reference/. Update INDEX.md with current file list, tags, and line counts.
-5. Check reference/entities.md for orphaned or outdated entries.
-6. Report: how many TTL entries cleaned, files archived, duplicates fixed, INDEX entries updated.'
+1. Run: node WORKSPACE/scripts/memory-check-pointers.js
+   Fix EVERY broken pointer it reports (repoint to the real path, usually under memory/archive/
+   or reference/archive/, or remove the dead breadcrumb). Then re-run the script and repeat
+   until it exits 0. Do not continue to step 2 while pointers are broken.
+2. Read MEMORY.md. Remove any line with <!-- ttl:YYYY-MM-DD --> where the date has passed.
+3. Archive daily notes older than 14 days into memory/archive/ (create it if needed).
+   Use a date-shaped match so topic files are never touched:
+     find memory -maxdepth 1 -name "20[0-9][0-9]-[0-1][0-9]-[0-3][0-9].md" -mtime +14
+   Topic files (viajes.md, salud.md, tecnico.md, trading.md, ...) live in the same directory
+   and are often older than 14 days. Never move them.
+4. Run: node WORKSPACE/scripts/memory-dedup.js --fix
+5. Read all files in memory/ and reference/. Update INDEX.md with current file list and line counts.
+6. Check reference/entities.md for orphaned or outdated entries.
+7. Report: broken pointers fixed, TTL entries cleaned, files archived, duplicates fixed, INDEX entries updated.
+   If nothing changed, stay silent.'
 
-echo "🧹 Cron 1/2: Weekly audit (Sunday 22:00)"
+echo "🧹 Cron 1/2: Weekly mechanical audit (Monday 3:40)"
 if [[ "$DRY_RUN" == "true" ]]; then
-  echo "   [dry-run] Would create: --cron '0 22 * * 0' --tz $TZ --name 'memstack: weekly-audit'"
+  echo "   [dry-run] Would create: --cron '40 3 * * 1' --tz $TZ --name 'memstack: weekly-audit'"
 else
   openclaw cron add \
     --name "memstack: weekly-audit" \
-    --cron "0 22 * * 0" \
+    --cron "40 3 * * 1" \
     --tz "$TZ" \
     --session isolated \
     --message "$AUDIT_MSG" \
-    --timeout-seconds 180 \
+    --timeout-seconds 300 \
     $MODEL_ARGS \
     $DELIVER_ARGS \
     --json 2>&1 | tail -1
 fi
+echo ""
+echo "   ⚠️  Replace WORKSPACE in the created cron prompt with your absolute workspace path."
 echo ""
 
 # ─── Cron 2: Daily compact of Dreaming-promoted blocks (3:15 AM) ─────────────
@@ -161,7 +175,7 @@ echo ""
 echo "✅ Done! Run 'openclaw cron list' to verify."
 echo ""
 echo "📋 Crons managed by layered-memstack:"
-echo "   • memstack: weekly-audit — every Sunday 22:00 (TTL cleanup, archive, INDEX)"
+echo "   • memstack: weekly-audit — every Monday 3:40 (pointer check, TTL cleanup, archive, dedup, INDEX)"
 echo "   • memstack: compact-promoted — daily 3:15 (prunes Dreaming-promoted duplicates from MEMORY.md)"
 [[ "$MCP_AUDIT" == "true" ]] && echo "   • memstack: mcp-audit — daily 23:00 (MCP write security audit)"
 echo ""

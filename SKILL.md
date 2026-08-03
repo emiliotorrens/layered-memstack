@@ -30,7 +30,9 @@ reference/
 ├── entities.md        ← knowledge graph (people, places, projects, relations)
 ├── *.md               ← L3: deep dives (loaded on demand via memory_search)
 scripts/
-└── memory-dedup.js    ← dedup engine
+├── memory-dedup.js            ← dedup engine
+├── memory-check-pointers.js   ← broken-pointer detector (live memory only)
+└── cron-health.js             ← pre-digests cron state for the audit pass
 BOOTSTRAP.md           ← compiled snapshot (generated nightly, single read at session start)
 ```
 
@@ -42,9 +44,9 @@ BOOTSTRAP.md           ← compiled snapshot (generated nightly, single read at 
 mkdir -p memory/archive reference scripts
 ```
 
-### 2. Copy dedup script
+### 2. Copy the scripts
 
-Copy `scripts/memory-dedup.js` from this skill to the workspace `scripts/` directory.
+Copy `scripts/memory-dedup.js`, `scripts/memory-check-pointers.js` and (optionally) `scripts/cron-health.js` from this skill to the workspace `scripts/` directory. They are zero-dependency Node and resolve the workspace as the parent of `scripts/` (override with `MEMSTACK_WORKSPACE`).
 
 ### 3. Configure memorySearch
 
@@ -281,21 +283,64 @@ Enable in config:
 }
 ```
 
-### Cron 1: Weekly audit (Monday 3:00 AM recommended)
+### Cron 1: Weekly mechanical audit (Monday 3:40 AM recommended)
 
 ```
-Schedule: 0 3 * * 1 (user timezone)
+Schedule: 40 3 * * 1 (user timezone)
 Session: isolated agentTurn
+timeoutSeconds: 300   ← always set this (see "Cron hygiene" below)
 ```
 
 Prompt should instruct the agent to:
-1. Move daily notes older than 14 days to `memory/archive/`
-2. Clean expired TTL entries from MEMORY.md (lines with `<!-- ttl:YYYY-MM-DD -->` past today)
-3. Run `--fix` on MEMORY.md
-4. If MEMORY.md exceeds ~70 lines → warn to prune (move detail to reference/)
-5. Report summary of changes (or stay silent if nothing to do)
+1. **Run `node scripts/memory-check-pointers.js`** and fix every broken pointer it reports, re-running until it exits 0. This is step one on purpose: a dead pointer is the one failure mode that makes recall actively lie.
+2. Move daily notes older than 14 days to `memory/archive/`
+3. Clean expired TTL entries from MEMORY.md (lines with `<!-- ttl:YYYY-MM-DD -->` past today)
+4. Run `--fix` on MEMORY.md
+5. If MEMORY.md exceeds ~70 lines → warn to prune (move detail to reference/)
+6. Report summary of changes (or stay silent if nothing to do)
 
-Use a small/cheap model (e.g. Haiku). This pass is mechanical: no judgment calls, just rules.
+This pass is mechanical: no judgment calls, just rules. Even so, prefer a mid-tier model over the cheapest one — the file-moving steps involve `find`/`mv` against your memory directory, and a model that misreads an exclusion list will archive something it shouldn't.
+
+**Schedule it away from Dreaming.** If Dreaming runs at 3:00, don't run this at 3:00 too: the audit will be reading and rewriting MEMORY.md while the deep phase is writing to it. 3:40 leaves room.
+
+**Guard the file-moving step.** Any `find memory/ -name '*.md' -mtime +14 | xargs mv` style step must exclude your topic files by name, not just by pattern — topic files (`viajes.md`, `salud.md`, `trading.md`, …) live in the same directory as the dailies and are often older than 14 days. The safe form is an explicit date-shaped match:
+
+```bash
+find memory -maxdepth 1 -name '20[0-9][0-9]-[0-1][0-9]-[0-3][0-9].md' -mtime +14
+```
+
+### Pointer integrity — why a script and not a prompt
+
+`scripts/memory-check-pointers.js` checks that every workspace-relative path cited in **live** memory actually exists on disk.
+
+```bash
+node scripts/memory-check-pointers.js          # human report, exit 1 if broken
+node scripts/memory-check-pointers.js --quiet  # one line per break (for crons)
+node scripts/memory-check-pointers.js --json   # machine-readable
+```
+
+It only scans live memory (root files, `memory/*.md`, `reference/*.md` — no recursion), because archived notes legitimately point at files that were later moved. Mark example paths in prose with `<!-- pointer-check:ignore -->`.
+
+The direction matters. An LLM audit that asks "are there files with no pointer?" finds orphans; it does **not** find pointers with no file, and that is the harmful direction — the agent reads a breadcrumb saying "detail in `reference/foo.md`" and reports on a file that no longer exists. Real case: a weekly audit reported OK for weeks while two dead pointers sat in a topic file. Deterministic check, 50 ms, exit code a cron can branch on. Don't ask a model to eyeball this.
+
+### Cron hygiene — the watchdog paradox
+
+If you run an "audit my crons" cron, do **not** let it list the crons itself. Handing the model raw `openclaw cron list --all --json` means feeding it every job object you own: measured at 51 jobs that's ~141 KB, and runs were burning 250–630k tokens and failing ~40% of the time.
+
+That failure is self-concealing — the watchdog is what reports other crons failing, so when it dies of indigestion, nothing reports anything, including this memory audit. Use `scripts/cron-health.js`, which reads live gateway state and emits only the actionable part (141 KB → 1.7 KB, −98.8%; the same run went from error/390k tokens to ok/174k tokens in 44 s):
+
+```bash
+node scripts/cron-health.js          # compact text report
+node scripts/cron-health.js --json   # compact JSON
+# exit 0 = clean · 1 = jobs in error · 2 = gateway unreadable
+```
+
+The cron prompt should run the script and explicitly forbid listing jobs by hand, *with the reason* — otherwise a model that finds the digest terse will "helpfully" fall back to the raw dump and reintroduce the bug.
+
+Two related traps this surfaces:
+
+- **Always set `timeoutSeconds` on `agentTurn` crons.** A job with no limit doesn't fail fast, it fails silently and expensively. `cron-health.js` counts these for you.
+- **Never call the in-agent cron tool from inside a cron** to enumerate jobs: on isolated cron sessions the narrow self-cleanup grant filters the response to the current job, so the audit sees only itself and cheerfully reports all-clear.
 
 ### Cron 1b (optional): Analytical audit (Sunday 22:00 recommended)
 
@@ -405,6 +450,7 @@ Add to workspace AGENTS.md:
 4. Before writing to MEMORY.md: `node scripts/memory-dedup.js --query "text"` (exit 0 = dup, skip; exit 1 = new, ok)
 5. After writing to MEMORY.md: `node scripts/memory-dedup.js --fix`
 6. Items with TTL: `<!-- ttl:YYYY-MM-DD -->` — cleaned by weekly audit cron
+7. If you move, rename, archive or compress any memory/reference file, run `node scripts/memory-check-pointers.js` and fix what it reports. Never leave a pointer to a path that no longer exists.
 ```
 
 ## BOOTSTRAP.md (compiled snapshot)
