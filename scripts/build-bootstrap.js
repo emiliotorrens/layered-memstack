@@ -12,7 +12,7 @@ const { execSync } = require('child_process');
 const WORKSPACE = path.join(process.env.HOME, '.openclaw/workspace');
 const OUT = path.join(WORKSPACE, 'BOOTSTRAP.md');
 const TG = path.join(WORKSPACE, 'scripts/tg-send.js');
-const CHAT_LOGS = '-1003751740090';
+const CHAT_LOGS = process.env.MEMSTACK_LOGS_CHAT_ID || null;
 
 function tgLog(msg) {
   try { execSync(`node ${TG} ${CHAT_LOGS} ${JSON.stringify(msg)}`, { encoding: 'utf8' }); } catch {}
