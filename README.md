@@ -174,6 +174,19 @@ Algorithm: Jaccard similarity + containment ratio + entity overlap (dates, IDs, 
 
 > **Note (OpenClaw 2026.4.8+):** Dreaming injects `<!-- openclaw-memory-promotion:... -->` provenance markers into MEMORY.md. The dedup engine automatically skips these lines to avoid false positives (fixed in `fd389b9`).
 
+### Suppressing false positives
+
+Semantic matches are heuristic, so `--fix` occasionally flags two lines that read alike but mean different things — a classic case is an open TODO sitting next to the already-settled decision on the same topic:
+
+```markdown
+- Claude Desktop on laptop: use mcp-proxy.js
+- [ ] Configure mcp-proxy.js on laptop (Tailscale MagicDNS) <!-- dedup:ignore -->
+```
+
+Add `<!-- dedup:ignore -->` to exclude a line from the analysis. Without it `--fix` re-marks the same line on every run, and a marker that always fires stops being a signal. The marker is stripped before scoring, so it never affects similarity itself.
+
+Mirrors the `<!-- pointer-check:ignore -->` convention used by the pointer checker.
+
 ---
 
 ## Pointer Integrity

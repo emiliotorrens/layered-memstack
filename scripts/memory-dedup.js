@@ -5,6 +5,12 @@
  * Modos:
  *   --check              Lista duplicados sin modificar nada
  *   --fix                Elimina exactos, marca semánticos con <!-- dup? -->
+ *
+ * Falsos positivos:
+ *   Añade <!-- dedup:ignore --> al final de una línea para excluirla del análisis.
+ *   Úsalo cuando dos líneas se parecen pero dicen cosas distintas (p.ej. un TODO
+ *   abierto vs. la decisión ya tomada sobre el mismo tema). Sin esto, --fix
+ *   vuelve a marcarla en cada pasada y el marcador deja de ser señal.
  *   --query "texto"      Comprueba si un texto ya existe (exit 0 = duplicado, 1 = nuevo)
  *   --query-batch file   Lee líneas de un archivo y filtra las que ya existen
  *
@@ -23,6 +29,9 @@ const path = require('path');
 const WORKSPACE = path.resolve(__dirname, '..');
 const DEFAULT_FILE = path.join(WORKSPACE, 'MEMORY.md');
 const DEFAULT_THRESHOLD = 0.65;
+
+// Líneas marcadas explícitamente como "no es duplicado" — se excluyen del análisis
+const IGNORE_MARKER = /<!--\s*dedup:ignore\s*-->/;
 
 // ─── Text normalization ────────────────────────────────────────────────────
 
@@ -224,7 +233,9 @@ function findDuplicates(content, threshold = DEFAULT_THRESHOLD) {
   );
 
   for (let i = 0; i < allLines.length; i++) {
+    if (IGNORE_MARKER.test(allLines[i].text)) continue;
     for (let j = i + 1; j < allLines.length; j++) {
+      if (IGNORE_MARKER.test(allLines[j].text)) continue;
       const sim = similarity(allLines[i].text, allLines[j].text);
       if (sim.score >= threshold) {
         duplicates.push({
@@ -257,6 +268,7 @@ function dedup(content, threshold = DEFAULT_THRESHOLD) {
     const line = lines[i];
     if (!line.trim() || /^#{1,3}\s/.test(line)) continue;
     if (/<!--\s*openclaw-memory-promotion:/.test(line)) continue; // skip Dreaming markers
+    if (IGNORE_MARKER.test(line)) continue; // opt-out explícito
     const norm = normalize(line);
     if (norm.length < 10) continue;
 
@@ -272,6 +284,7 @@ function dedup(content, threshold = DEFAULT_THRESHOLD) {
   for (let i = 0; i < lines.length; i++) {
     if (!lines[i].trim() || /^#{1,3}\s/.test(lines[i]) || toRemove.has(i)) continue;
     if (/<!--\s*openclaw-memory-promotion:/.test(lines[i])) continue; // skip Dreaming markers
+    if (IGNORE_MARKER.test(lines[i])) continue; // opt-out explícito
     if (normalize(lines[i]).length < 10) continue;
     contentLines.push({ text: lines[i], idx: i });
   }
