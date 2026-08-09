@@ -1,6 +1,6 @@
 # MEMORY.md — Long-term memory
 
-<!-- L1: Breadcrumbs + pointers. Always loaded. Keep under ~50-60 lines. -->
+<!-- L1: Breadcrumbs + pointers. Always loaded. Keep under ~80-110 lines. -->
 <!-- Detail goes in reference/ or memory/ files — NOT here. -->
 <!-- Use TTL for time-bound items: <!-- ttl:YYYY-MM-DD --> -->
 <!-- Before adding: node scripts/memory-dedup.js --query "text" -->

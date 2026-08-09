@@ -8,7 +8,7 @@ It stays deliberately thin on retrieval — OpenClaw's `memory_search` already d
 
 ## What It Does
 
-- **Layered memory structure** — L1 (MEMORY.md, always loaded, ~50-60 lines of breadcrumbs), L2 (topic files + daily notes), L3 (deep references, loaded on demand)
+- **Layered memory structure** — L1 (MEMORY.md, always loaded, ~80-110 lines of breadcrumbs), L2 (topic files + daily notes), L3 (deep references, loaded on demand)
 - **BOOTSTRAP.md snapshot** — single compiled file replacing 4–6 per-session reads; reduces token cost ~30-50% at session start
 - **Nightly consolidation** — via OpenClaw's native Dreaming (2026.4.8+), or a manual cron for older versions
 - **Deduplication** — prevents writing the same fact twice using token similarity + entity overlap
@@ -27,7 +27,7 @@ It stays deliberately thin on retrieval — OpenClaw's `memory_search` already d
 ```
 workspace/
 ├── BOOTSTRAP.md          ← compiled snapshot (generated nightly, single read at session start)
-├── MEMORY.md             ← L1: breadcrumbs + pointers (~50-60 lines, always loaded)
+├── MEMORY.md             ← L1: breadcrumbs + pointers (~80-110 lines, always loaded)
 ├── INDEX.md              ← catalog of all files with tags
 ├── memory/
 │   ├── viajes.md         ← L2: topic breadcrumbs
@@ -57,7 +57,9 @@ workspace/
 
 Always loaded at session start. Contains **breadcrumbs and pointers only** — not detailed information. Each section points to the relevant L2/L3 file.
 
-> **💡 Why ~50-60 lines?** MEMORY.md is injected as context on every turn. Keeping it compact saves ~56% of workspace injection tokens compared to ~100 lines — that adds up across hundreds of daily turns.
+> **💡 Why ~80-110 lines?** MEMORY.md is injected as context on every turn, so its cost scales directly with its length. Measured on a real workspace at ~110 bytes/line: 60 lines ≈ 1.7K tokens/turn, 110 lines ≈ 3.0K. Treat the range as a token budget, not a style rule.
+>
+> **Revised from ~50-60 (2026-08).** The original target was tighter, but in day-to-day use with ~10 active domains (travel, health, finances, pets, side projects) it was missed every single week — the legitimate breadcrumbs simply didn't fit. A target that's permanently violated stops being a signal: the weekly audit flagged it every run with nothing actionable to do. 80-110 is the honest ceiling. Past 110, don't compress the wording — move detail down to L2/L3, which is what the layers are for.
 
 TTL support for time-bound items:
 
@@ -547,10 +549,10 @@ After any provider change, rebuild the index with `openclaw memory index --force
 
 All workspace files are injected into every turn as context. This skill minimizes that cost:
 
-- **L1 stays tiny** (~50-60 lines) — breadcrumbs only, never detail
+- **L1 stays bounded** (~80-110 lines) — breadcrumbs only, never detail
 - **Detail lives in L2/L3** — loaded on demand via `memory_search`
 - **Automated maintenance** prevents MEMORY.md from growing back
-- **Real-world savings**: ~56% reduction in workspace injection tokens (from ~6K to ~2.7K tokens/turn)
+- **Real-world savings**: ~56% reduction in workspace injection tokens (from ~6K to ~2.7K tokens/turn), measured with L1 at ~60 lines. At the revised 80-110 ceiling, budget roughly ~1.4K tokens/turn more for L1 — still a large net win, since the bulk of the saving comes from the BOOTSTRAP.md snapshot and from keeping detail out of L1, not from the line cap itself.
 
 ---
 

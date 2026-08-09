@@ -21,7 +21,7 @@ description: >
 ## Architecture
 
 ```
-MEMORY.md              ← L1: always loaded, ~50-60 lines max (breadcrumbs + pointers)
+MEMORY.md              ← L1: always loaded, ~80-110 lines max (breadcrumbs + pointers)
 memory/
 ├── {topic}.md         ← L2: topic breadcrumbs (viajes, salud, tecnico...)
 ├── YYYY-MM-DD.md      ← L2: daily notes (auto-generated at 3 AM)
@@ -166,7 +166,7 @@ Or create them manually (see Cron Setup below).
 
 | Layer | When to load | What goes here | Size target |
 |-------|-------------|----------------|-------------|
-| L1 | Every session start | Breadcrumbs + pointers to L2/L3. Core facts, active project names, pending items. **No detail here.** | ~50-60 lines |
+| L1 | Every session start | Breadcrumbs + pointers to L2/L3. Core facts, active project names, pending items. **No detail here.** | ~80-110 lines |
 | L2 | Today + yesterday auto-loaded; older via search | Topic summaries, daily notes with decisions/actions/facts | No limit |
 | L3 | Only via memory_search | Deep dives, travel details, health data, technical docs | No limit |
 
