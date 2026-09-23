@@ -32,6 +32,8 @@
  *
  * Workspace root defaults to the parent of this script; override with
  * MEMSTACK_WORKSPACE=/path/to/workspace.
+ * If pointer targets (scripts/, data/…) live outside the memory root, list the other
+ * roots in MEMSTACK_EXTRA_ROOTS=/path/a:/path/b and a pointer resolves if it exists in any.
  *
  * Exit codes: 0 = all pointers resolve | 1 = at least one broken pointer
  */
@@ -40,6 +42,9 @@ const fs = require('fs');
 const path = require('path');
 
 const WS = path.resolve(process.env.MEMSTACK_WORKSPACE || path.join(__dirname, '..'));
+// Extra roots to resolve pointer targets against (colon-separated). For split layouts
+// where memory files and scripts/data live in different directories.
+const EXTRA_ROOTS = (process.env.MEMSTACK_EXTRA_ROOTS || '').split(':').filter(Boolean).map(r => path.resolve(r));
 const args = process.argv.slice(2);
 const QUIET = args.includes('--quiet');
 const JSON_OUT = args.includes('--json');
@@ -70,7 +75,7 @@ function collectSourceFiles() {
 
 // Matches workspace-relative paths written in prose, links or code spans.
 const POINTER_RE =
-  /\b((?:memory|reference|data|scripts|projects|skills|tmp)\/[A-Za-z0-9_@./-]+\.(?:md|csv|json|js|py|xlsx|sh|yaml|yml))/g;
+  /\b((?:memory|reference|data|scripts|projects|skills|tmp)\/[A-Za-z0-9_@./-]+\.(?:md|csv|jsonl|json|js|py|xlsx|sh|yaml|yml))/g;
 
 // Templates and placeholders are not real paths.
 function isPlaceholder(target) {
@@ -97,7 +102,7 @@ for (const file of collectSourceFiles()) {
       const target = m[1].replace(/[.,;:)\]}]+$/, '');
       if (isPlaceholder(target)) continue;
       pointerCount++;
-      if (fs.existsSync(path.join(WS, target))) continue;
+      if ([WS, ...EXTRA_ROOTS].some(r => fs.existsSync(path.join(r, target)))) continue;
       const key = `${rel}:${i + 1}:${target}`;
       if (seen.has(key)) continue;
       seen.add(key);

@@ -46,7 +46,7 @@ mkdir -p memory/archive reference scripts
 
 ### 2. Copy the scripts
 
-Copy `scripts/memory-dedup.js`, `scripts/memory-check-pointers.js` and (optionally) `scripts/cron-health.js` from this skill to the workspace `scripts/` directory. They are zero-dependency Node and resolve the workspace as the parent of `scripts/` (override with `MEMSTACK_WORKSPACE`).
+Copy `scripts/memory-dedup.js`, `scripts/memory-check-pointers.js` and (optionally) `scripts/cron-health.js` from this skill to the workspace `scripts/` directory. They are zero-dependency Node and resolve the workspace as the parent of `scripts/` (override with `MEMSTACK_WORKSPACE`). If your memory files and your `scripts/`/`data/` live in different directories, pass the extra roots to the pointer checker with `MEMSTACK_EXTRA_ROOTS=/path/a:/path/b` so those pointers resolve.
 
 ### 3. Configure memorySearch
 
